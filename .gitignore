@@ -4,3 +4,6 @@ __pycache__/
 venv/
 .vscode/
 test_audio.py
+.claude/
+*.jsonl
+data/

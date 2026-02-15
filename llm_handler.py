@@ -81,18 +81,35 @@ Remember: KOREAN ONLY! Never use English in your response.
         """
         self.context.append({"role": role, "text": text})
 
-    def _build_prompt(self, streamer_speech, chat_context=""):
+    def _build_prompt(self, streamer_speech, chat_context="",
+                      streamer_memory="", chat_memory="", my_chat_memory=""):
         """
         컨텍스트를 포함한 프롬프트 생성
 
         Args:
             streamer_speech: 스트리머 발언
             chat_context: 최근 채팅 메시지들
+            streamer_memory: 스트리머 특징 메모리
+            chat_memory: 채팅 분위기 메모리
+            my_chat_memory: 내 응답 패턴 메모리
 
         Returns:
             str: 완성된 프롬프트
         """
         prompt_parts = [self.system_prompt]
+
+        # 메모리 섹션
+        memory_section = []
+        if streamer_memory:
+            memory_section.append(f"스트리머 특징:\n{streamer_memory}")
+        if chat_memory:
+            memory_section.append(f"채팅 분위기:\n{chat_memory}")
+        if my_chat_memory:
+            memory_section.append(f"내 응답 패턴:\n{my_chat_memory}")
+
+        if memory_section:
+            prompt_parts.append("\n[참고 정보]")
+            prompt_parts.append("\n".join(memory_section))
 
         # 최근 채팅 컨텍스트 (다른 시청자들의 채팅)
         if chat_context:
@@ -111,12 +128,17 @@ Remember: KOREAN ONLY! Never use English in your response.
 
         return "\n".join(prompt_parts)
 
-    def generate_response(self, streamer_speech, chat_context=""):
+    def generate_response(self, streamer_speech, chat_context="",
+                          streamer_memory="", chat_memory="", my_chat_memory=""):
         """
         스트리머 발언에 대한 응답 생성
 
         Args:
             streamer_speech: 스트리머 발언
+            chat_context: 최근 채팅 메시지들
+            streamer_memory: 스트리머 특징 메모리
+            chat_memory: 채팅 분위기 메모리
+            my_chat_memory: 내 응답 패턴 메모리
 
         Returns:
             str: 생성된 응답 (실패 시 None)
@@ -126,7 +148,10 @@ Remember: KOREAN ONLY! Never use English in your response.
 
         try:
             # 프롬프트 생성
-            prompt = self._build_prompt(streamer_speech, chat_context)
+            prompt = self._build_prompt(
+                streamer_speech, chat_context,
+                streamer_memory, chat_memory, my_chat_memory
+            )
 
             # Ollama API 호출
             payload = {

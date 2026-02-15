@@ -1,3 +1,4 @@
+import os
 import time
 import signal
 import sys
@@ -7,6 +8,8 @@ from speech_recognition import SpeechRecognizer
 from llm_handler import LLMHandler
 from chat_sender import ChatSender, MockChatSender
 from chat_reader import ChatReader, extract_channel_id
+from memory.memory_store import MemoryStore
+from memory.memory_manager import MemoryManager
 
 
 class ChzzkVoiceBot:
@@ -26,6 +29,12 @@ class ChzzkVoiceBot:
         self.llm_handler = LLMHandler()
         self.chat_sender = MockChatSender() if use_mock else ChatSender()
         self.chat_reader = None
+
+        # 메모리 시스템 (initialize에서 channel_id 확정 후 초기화)
+        self.streamer_memory = None
+        self.chat_memory = None
+        self.my_chat_memory = None
+        self.memory_manager = None
 
         self.is_running = False
         self.last_response_time = 0
@@ -53,6 +62,23 @@ class ChzzkVoiceBot:
 
         channel_id = extract_channel_id(url)
         print(f"채널 ID: {channel_id}")
+
+        # 채널별 메모리 초기화
+        data_dir = os.path.join(os.path.dirname(__file__), "data", channel_id)
+        self.streamer_memory = MemoryStore(
+            os.path.join(data_dir, "streamer_memory.json"), max_facts=5
+        )
+        self.chat_memory = MemoryStore(
+            os.path.join(data_dir, "chat_memory.json"), max_facts=4
+        )
+        self.my_chat_memory = MemoryStore(
+            os.path.join(data_dir, "my_chat_memory.json"), max_facts=4
+        )
+        self.memory_manager = MemoryManager(
+            self.streamer_memory, self.chat_memory, self.my_chat_memory
+        )
+        if not self.streamer_memory.is_empty():
+            print(f"  기존 메모리 로드됨 (스트리머: {len(self.streamer_memory.get_facts())}개)")
 
         # [2] 채팅 리더 시작 (실시간 채팅 수집)
         print("\n[2/5] 채팅 리더 시작...")
@@ -155,9 +181,14 @@ class ChzzkVoiceBot:
                     if chat_context != "(채팅 없음)":
                         print(f"  채팅 컨텍스트: {len(self.chat_reader.messages)}개")
 
-                # 7. LLM 응답 생성 (음성 + 채팅 컨텍스트)
+                # 7. LLM 응답 생성 (음성 + 채팅 컨텍스트 + 메모리)
                 print("  응답 생성 중...")
-                response = self.llm_handler.generate_response(text, chat_context)
+                response = self.llm_handler.generate_response(
+                    text, chat_context,
+                    streamer_memory=self.streamer_memory.get_facts_as_prompt(),
+                    chat_memory=self.chat_memory.get_facts_as_prompt(),
+                    my_chat_memory=self.my_chat_memory.get_facts_as_prompt()
+                )
                 if not response:
                     print("  응답 생성 실패")
                     continue
@@ -183,6 +214,9 @@ class ChzzkVoiceBot:
                 if success:
                     self.stats["sent_messages"] += 1
                     self.last_response_time = current_time
+                    self.memory_manager.record_interaction(
+                        text, response, chat_context
+                    )
 
             except Exception as e:
                 print(f"\n오류: {e}")
@@ -191,6 +225,13 @@ class ChzzkVoiceBot:
     def stop(self):
         """종료"""
         self.is_running = False
+
+        # 메모리 저장
+        if self.memory_manager:
+            print("메모리 저장 중...")
+            self.memory_manager.force_update()
+            self.memory_manager.save_all()
+            print("메모리 저장 완료")
 
         if self.audio_capture:
             self.audio_capture.stop()

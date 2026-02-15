@@ -13,7 +13,7 @@ class Config:
     CHZZK_CHANNEL_ID = os.getenv("CHZZK_CHANNEL_ID")
 
     # Ollama 설정
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama2")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
     # Whisper 설정
