@@ -200,19 +200,33 @@ class LLMHandler:
         if not text:
             return None
 
-        # qwen3 thinking 태그 제거 (fallback)
+        # qwen3 thinking 태그 제거
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
 
-        # 줄바꿈 제거
-        text = text.replace("\n", " ").strip()
+        # 줄바꿈 → 첫 줄만 사용
+        text = text.split("\n")[0].strip()
 
-        # 너무 긴 응답 자르기 (50자 제한)
+        # 영어 설명/번역 패턴 제거 ("한국어" which translates to... 패턴)
+        text = re.sub(r'"\s*(which|translat|meaning|seems|or\s+"|that|this|the|but|so|and|is|I |it |not|look)\b.*', '', text, flags=re.IGNORECASE).strip()
+
+        # 앞쪽 영어 사고 과정 제거 → 첫 한글 위치부터 추출
+        korean_match = re.search(r'[가-힣ㄱ-ㅎㅏ-ㅣ]', text)
+        if korean_match and korean_match.start() > 0:
+            text = text[korean_match.start():]
+        elif not korean_match:
+            return None
+
+        # 뒤쪽에 남은 영어 꼬리 제거 (한글 뒤에 붙은 영어)
+        text = re.sub(r'\s+[a-zA-Z][\w\s]*$', '', text).strip()
+
+        # 따옴표/라벨 제거
+        text = re.sub(r'^(응답:\s*|Response:\s*)', '', text).strip()
+        text = text.strip('"\'')
+
+        # 50자 제한
         if len(text) > 50:
             text = text[:50]
-
-        # 따옴표 제거
-        text = text.strip('"\'')
 
         # 빈 응답 체크
         if not text or len(text) < 2:
