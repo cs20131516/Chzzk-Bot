@@ -1,5 +1,10 @@
 import warnings
 warnings.filterwarnings("ignore", message="data discontinuity")
+try:
+    from soundcard.mediafoundation import SoundcardRuntimeWarning
+    warnings.filterwarnings("ignore", category=SoundcardRuntimeWarning)
+except ImportError:
+    warnings.filterwarnings("ignore", module="soundcard")
 
 import numpy as np
 import queue

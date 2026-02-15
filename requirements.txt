@@ -1,4 +1,4 @@
-openai-whisper>=20230314
+qwen-asr>=0.3.0
 torch>=2.0.0
 sounddevice>=0.4.6
 numpy>=1.24.0

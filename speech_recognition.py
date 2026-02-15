@@ -1,43 +1,52 @@
-import whisper
+import torch
 import numpy as np
 from config import Config
 
 
 class SpeechRecognizer:
-    """Whisper 기반 음성 인식 클래스"""
+    """Qwen3-ASR 기반 음성 인식 클래스"""
 
     def __init__(self, model_name=None):
         """
         Args:
-            model_name: Whisper 모델 이름 (tiny, base, small, medium, large)
+            model_name: ASR 모델 이름 (예: Qwen/Qwen3-ASR-0.6B, Qwen/Qwen3-ASR-1.7B)
         """
-        self.model_name = model_name or Config.WHISPER_MODEL
+        self.model_name = model_name or Config.ASR_MODEL
         self.model = None
         self.is_loaded = False
 
     def load_model(self):
-        """Whisper 모델 로딩"""
+        """Qwen3-ASR 모델 로딩"""
         if self.is_loaded:
             return
 
-        print(f"Whisper 모델 로딩 중... (모델: {self.model_name})")
+        print(f"ASR 모델 로딩 중... (모델: {self.model_name})")
         print("처음 실행 시 모델 다운로드로 시간이 걸릴 수 있습니다.")
 
         try:
-            self.model = whisper.load_model(self.model_name)
+            from qwen_asr import Qwen3ASRModel
+
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            self.model = Qwen3ASRModel.from_pretrained(
+                self.model_name,
+                dtype=torch.bfloat16 if device != "cpu" else torch.float32,
+                device_map=device,
+                max_new_tokens=256,
+            )
             self.is_loaded = True
-            print("Whisper 모델 로딩 완료")
+            print(f"ASR 모델 로딩 완료 (device: {device})")
         except Exception as e:
-            print(f"Whisper 모델 로딩 실패: {e}")
+            print(f"ASR 모델 로딩 실패: {e}")
             raise
 
-    def transcribe(self, audio_data, language="ko"):
+    def transcribe(self, audio_data, sample_rate=None, language="Korean"):
         """
         오디오 데이터를 텍스트로 변환
 
         Args:
             audio_data: numpy array 형태의 오디오 데이터
-            language: 언어 코드 (기본값: ko)
+            sample_rate: 샘플레이트 (None이면 Config에서 가져옴)
+            language: 언어 이름 (기본값: Korean)
 
         Returns:
             str: 인식된 텍스트 (실패 시 None)
@@ -50,27 +59,25 @@ class SpeechRecognizer:
 
         try:
             # 오디오 데이터 전처리
-            # sounddevice는 (samples, channels) 형태로 반환하므로 flatten 필요
             if len(audio_data.shape) > 1:
                 audio_data = audio_data.flatten()
 
-            # float32로 변환 및 정규화
             audio_data = audio_data.astype(np.float32)
 
-            # Whisper는 [-1, 1] 범위를 기대
+            # [-1, 1] 범위로 정규화
             max_val = np.abs(audio_data).max()
             if max_val > 0:
                 audio_data = audio_data / max_val
 
-            # Whisper 실행
-            result = self.model.transcribe(
-                audio_data,
+            sr = sample_rate or Config.AUDIO_SAMPLE_RATE
+
+            # Qwen3-ASR는 (np.ndarray, sr) 튜플 입력 지원
+            results = self.model.transcribe(
+                audio=(audio_data, sr),
                 language=language,
-                fp16=False,  # CPU에서는 fp16=False 사용
-                verbose=False
             )
 
-            text = result["text"].strip()
+            text = results[0].text.strip()
             return text if text else None
 
         except Exception as e:
@@ -99,7 +106,7 @@ class SpeechRecognizer:
         if len(words) <= 3 and len(set(words)) == 1:
             return False
 
-        # Whisper가 인식 실패 시 자주 반환하는 패턴 제외
+        # 인식 실패 시 자주 반환하는 패턴 제외
         ignore_patterns = [
             "자막",
             "번역",
@@ -145,7 +152,7 @@ def test_transcribe(audio_file_path):
 
     # 음성 인식
     print("\n음성 인식 중...")
-    text = recognizer.transcribe(audio_data)
+    text = recognizer.transcribe(audio_data, sample_rate=sample_rate)
 
     if text:
         print(f"\n인식 결과: {text}")

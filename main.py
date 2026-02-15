@@ -86,12 +86,12 @@ class ChzzkVoiceBot:
         self.chat_reader.start()
         time.sleep(3)  # 연결 대기
 
-        # [3] Whisper + Ollama 체크
-        print("\n[3/5] Whisper 모델 로딩...")
+        # [3] ASR + Ollama 체크
+        print("\n[3/5] ASR 모델 로딩...")
         try:
             self.speech_recognizer.load_model()
         except Exception as e:
-            print(f"Whisper 로딩 실패: {e}")
+            print(f"ASR 모델 로딩 실패: {e}")
             return False
 
         print("\n[4/5] Ollama 연결 확인...")

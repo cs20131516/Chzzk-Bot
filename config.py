@@ -16,8 +16,8 @@ class Config:
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-    # Whisper 설정
-    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+    # ASR 설정
+    ASR_MODEL = os.getenv("ASR_MODEL", "Qwen/Qwen3-ASR-0.6B")
 
     # 오디오 설정
     AUDIO_SAMPLE_RATE = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
@@ -55,7 +55,7 @@ class Config:
         print("=" * 50)
         print(f"Ollama 모델: {cls.OLLAMA_MODEL}")
         print(f"Ollama 호스트: {cls.OLLAMA_HOST}")
-        print(f"Whisper 모델: {cls.WHISPER_MODEL}")
+        print(f"ASR 모델: {cls.ASR_MODEL}")
         print(f"오디오 샘플레이트: {cls.AUDIO_SAMPLE_RATE}Hz")
         print(f"오디오 청크 길이: {cls.AUDIO_CHUNK_DURATION}초")
         print(f"최소 발화 길이: {cls.MIN_SPEECH_LENGTH}초")

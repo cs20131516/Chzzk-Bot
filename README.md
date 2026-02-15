@@ -30,7 +30,7 @@
 │         │ audio_data              │ chat_context                 │
 │         ▼                         │                              │
 │  ┌──────────────┐                 │                              │
-│  │ Whisper STT  │                 │                              │
+│  │ Qwen3-ASR    │                 │                              │
 │  │ (음성→텍스트) │                 │                              │
 │  └──────┬───────┘                 │                              │
 │         │                         │                              │
@@ -40,7 +40,7 @@
 │  │           LLM (Ollama)              │                         │
 │  │                                     │                         │
 │  │  입력:                               │                         │
-│  │   - 스트리머 발언 (Whisper)          │                         │
+│  │   - 스트리머 발언 (Qwen3-ASR)       │                         │
 │  │   - 채팅 분위기 (ChatReader)         │                         │
 │  │   - 대화 히스토리                     │                         │
 │  │   - 메모리 (스트리머/채팅/내 응답)    │                         │
@@ -68,7 +68,7 @@
 ### 데이터 흐름 요약
 
 ```
-브라우저 오디오 ──→ soundcard 루프백 ──→ Whisper STT ──→ 텍스트
+브라우저 오디오 ──→ soundcard 루프백 ──→ Qwen3-ASR ──→ 텍스트
                                                           │
 치지직 WebSocket ──→ ChatReader ──→ 최근 채팅 ─────────────┤
                                                           │
@@ -88,7 +88,7 @@
 ## 시스템 요구사항
 
 - Python 3.9 이상
-- 최소 8GB RAM (Whisper 모델 실행용)
+- 최소 8GB RAM (ASR 모델 실행용)
 - GPU 권장 (CUDA, RTX 3090 등)
 - Windows (WASAPI 루프백)
 - Ollama 설치 필요
@@ -100,7 +100,7 @@ chzzk-bot/
 ├── main.py                  # 메인 실행 (통합 제어)
 ├── config.py                # 환경 변수 설정 관리
 ├── audio_capture.py         # 시스템 오디오 루프백 캡처 (soundcard)
-├── speech_recognition.py    # 음성 인식 (Whisper STT)
+├── speech_recognition.py    # 음성 인식 (Qwen3-ASR)
 ├── llm_handler.py           # LLM 응답 생성 (Ollama)
 ├── chat_reader.py           # 실시간 채팅 수집 (chzzkpy WebSocket)
 ├── chat_sender.py           # 채팅 자동 입력 (pyautogui)
@@ -158,7 +158,7 @@ CHZZK_CLIENT_SECRET=your_client_secret
 CHZZK_CHANNEL_ID=target_channel_id
 
 OLLAMA_MODEL=qwen3:4b
-WHISPER_MODEL=base
+ASR_MODEL=Qwen/Qwen3-ASR-0.6B
 
 AUDIO_SAMPLE_RATE=48000
 AUDIO_CHUNK_DURATION=5
@@ -198,7 +198,7 @@ python main.py --mock
 2. 방송 URL 입력 (예: `https://chzzk.naver.com/live/채널ID`)
 3. 채널별 메모리 로드 (기존 데이터가 있으면 자동 로드)
 4. 채팅 리더 연결 (WebSocket으로 실시간 채팅 수집)
-5. Whisper 모델 로딩
+5. ASR 모델 로딩
 6. Ollama 연결 확인
 7. 오디오 출력 장치 선택 (브라우저 소리가 나오는 스피커)
 8. 채팅 입력창 마우스 위치 설정 (5초 카운트다운)
@@ -225,7 +225,7 @@ python main.py --mock
 | 모듈 | 역할 | 핵심 기술 |
 |------|------|----------|
 | `audio_capture.py` | 시스템 오디오 루프백 캡처 | soundcard, WASAPI |
-| `speech_recognition.py` | 음성 → 텍스트 변환 | OpenAI Whisper |
+| `speech_recognition.py` | 음성 → 텍스트 변환 | Qwen3-ASR |
 | `llm_handler.py` | 자연스러운 채팅 응답 생성 | Ollama (qwen3:4b) |
 | `chat_reader.py` | 실시간 채팅 메시지 수집 | chzzkpy WebSocket |
 | `chat_sender.py` | 채팅창 자동 입력 | pyautogui + pyperclip |
@@ -235,14 +235,14 @@ python main.py --mock
 
 ## 설정 커스터마이징
 
-### Whisper 모델
+### ASR 모델 (음성 인식)
 
-| 모델 | 크기 | 속도 | 정확도 |
-|------|------|------|--------|
-| tiny | 39M | 매우 빠름 | 낮음 |
-| base | 74M | 빠름 | 보통 |
-| small | 244M | 보통 | 좋음 |
-| medium | 769M | 느림 | 매우 좋음 |
+| 모델 | 크기 | 한국어 | 특징 |
+|------|------|--------|------|
+| Qwen/Qwen3-ASR-0.6B | 0.6B | 지원 (권장) | 가볍고 빠름 |
+| Qwen/Qwen3-ASR-1.7B | 1.7B | 지원 | 더 높은 정확도 |
+
+> **대안 모델**: [Voxtral-Mini-4B](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) - 실시간 스트리밍 ASR, 한국어 지원, VRAM 16GB+ 필요 (vLLM 필수)
 
 ### Ollama 모델
 
@@ -258,8 +258,8 @@ python main.py --mock
 - 오디오 장치 선택 시 브라우저 소리가 나오는 스피커를 선택했는지 확인
 - 브라우저에서 방송 소리가 실제로 나오고 있는지 확인
 
-### Whisper 인식 품질이 낮음
-- `WHISPER_MODEL`을 `small` 또는 `medium`으로 변경
+### ASR 인식 품질이 낮음
+- `ASR_MODEL=Qwen/Qwen3-ASR-1.7B`로 더 큰 모델 사용
 - GPU 사용 설정 (CUDA)
 
 ### LLM이 영어로 응답함
