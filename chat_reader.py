@@ -7,7 +7,7 @@ import asyncio
 import threading
 from collections import deque
 
-from chzzkpy.unofficial.chat import ChatClient, ChatMessage
+from chzzkpy.unofficial.chat import ChatClient, ChatMessage, DonationMessage
 
 
 class ChatReader:
@@ -25,6 +25,7 @@ class ChatReader:
         """
         self.channel_id = channel_id
         self.messages = deque(maxlen=max_messages)
+        self.donations = deque(maxlen=max_messages)
         self._thread = None
         self._loop = None
         self._client = None
@@ -54,6 +55,16 @@ class ChatReader:
                 })
 
             @self._client.event
+            async def on_donation(message: DonationMessage):
+                nickname = message.profile.nickname if message.profile else "???"
+                content = message.content or ""
+                if content:
+                    self.donations.append({
+                        "nickname": nickname,
+                        "content": content,
+                    })
+
+            @self._client.event
             async def on_connect():
                 print("채팅 연결 성공! 메시지 수신 중...")
 
@@ -68,6 +79,11 @@ class ChatReader:
         """최근 채팅 메시지 반환"""
         messages = list(self.messages)
         return messages[-count:]
+
+    def get_recent_donations(self, count: int = 10) -> list[dict]:
+        """최근 도네이션 메시지 반환"""
+        donations = list(self.donations)
+        return donations[-count:]
 
     def get_chat_context(self, count: int = 10) -> str:
         """LLM 프롬프트용 채팅 컨텍스트 문자열 반환"""

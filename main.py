@@ -5,6 +5,7 @@ import sys
 import queue
 import random
 import threading
+from difflib import SequenceMatcher
 from config import Config
 from audio_capture import AudioCapture, select_speaker
 from speech_recognition import SpeechRecognizer
@@ -164,6 +165,51 @@ class ChzzkVoiceBot:
         finally:
             self.stop()
 
+    def _is_tts_donation(self, text, threshold=0.4):
+        """ASR 결과가 도네 TTS인지 도네이션/채팅 내용과 비교하여 판단
+
+        Args:
+            text: ASR로 인식된 텍스트
+            threshold: 유사도 임계값 (0.0~1.0, 기본 0.4)
+
+        Returns:
+            bool: TTS 도네이션이면 True
+        """
+        if not self.chat_reader:
+            return False
+
+        text_clean = text.strip().lower()
+
+        # 1차: 도네이션 메시지와 비교 (on_donation 이벤트로 수집)
+        donations = self.chat_reader.get_recent_donations(20)
+        for msg in donations:
+            donate_text = msg["content"].strip().lower()
+            if len(donate_text) < 3:
+                continue
+            ratio = SequenceMatcher(None, text_clean, donate_text).ratio()
+            if ratio > threshold:
+                print(f"[ASR] TTS 도네 감지 (도네 유사도 {ratio:.0%}): {donate_text[:30]}")
+                return True
+            # 부분 포함 체크 (ASR이 도네 텍스트의 일부만 인식한 경우)
+            if len(donate_text) >= 10 and donate_text in text_clean:
+                print(f"[ASR] TTS 도네 감지 (부분 일치): {donate_text[:30]}")
+                return True
+            if len(text_clean) >= 10 and text_clean in donate_text:
+                print(f"[ASR] TTS 도네 감지 (부분 일치): {donate_text[:30]}")
+                return True
+
+        # 2차: 일반 채팅과도 비교 (도네가 채팅에도 표시되는 경우)
+        recent = self.chat_reader.get_recent_messages(20)
+        for msg in recent:
+            chat_text = msg["content"].strip().lower()
+            if len(chat_text) < 5:
+                continue
+            ratio = SequenceMatcher(None, text_clean, chat_text).ratio()
+            if ratio > 0.5:
+                print(f"[ASR] TTS 도네 감지 (채팅 유사도 {ratio:.0%}): {chat_text[:30]}")
+                return True
+        return False
+
     def _asr_worker(self):
         """ASR 워커 스레드: 오디오 → 음성인식 → speech_queue"""
         while not self._stop_event.is_set():
@@ -192,7 +238,11 @@ class ChzzkVoiceBot:
                     print("[ASR] 무효한 발화 (무시)")
                     continue
 
-                # 5. speech_queue에 전달
+                # 5. TTS 도네이션 필터
+                if self._is_tts_donation(text):
+                    continue
+
+                # 6. speech_queue에 전달
                 self.speech_queue.put(text)
 
             except Exception as e:
