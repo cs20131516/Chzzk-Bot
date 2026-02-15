@@ -36,6 +36,10 @@ class Config:
     RESPONSE_MODE = os.getenv("RESPONSE_MODE", "ai")  # "ai" 또는 "mimic"
     WARMUP_SECONDS = int(os.getenv("WARMUP_SECONDS", "0"))  # 시작 후 관찰만 하는 시간 (초)
 
+    # 네이버 로그인 쿠키 (채팅 전송용)
+    NID_AUT = os.getenv("NID_AUT", "")
+    NID_SES = os.getenv("NID_SES", "")
+
     @classmethod
     def validate(cls):
         """필수 설정값 검증"""

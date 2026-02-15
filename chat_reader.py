@@ -43,39 +43,45 @@ class ChatReader:
         print(f"채팅 리더 시작 (채널: {self.channel_id})")
 
     def _run_client(self):
-        """별도 스레드에서 ChatClient 실행"""
-        try:
-            self._client = ChatClient(channel_id=self.channel_id)
+        """별도 스레드에서 ChatClient 실행 (자동 재연결)"""
+        retry_delay = 3
+        max_delay = 30
 
-            @self._client.event
-            async def on_chat(message: ChatMessage):
-                nickname = message.profile.nickname if message.profile else "???"
-                self.messages.append({
-                    "nickname": nickname,
-                    "content": message.content,
-                    "time": time.time(),
-                })
+        while self._running:
+            try:
+                self._client = ChatClient(channel_id=self.channel_id)
 
-            @self._client.event
-            async def on_donation(message: DonationMessage):
-                nickname = message.profile.nickname if message.profile else "???"
-                content = message.content or ""
-                if content:
-                    self.donations.append({
+                @self._client.event
+                async def on_chat(message: ChatMessage):
+                    nickname = message.profile.nickname if message.profile else "???"
+                    self.messages.append({
                         "nickname": nickname,
-                        "content": content,
+                        "content": message.content,
+                        "time": time.time(),
                     })
 
-            @self._client.event
-            async def on_connect():
-                print("채팅 연결 성공! 메시지 수신 중...")
+                @self._client.event
+                async def on_donation(message: DonationMessage):
+                    nickname = message.profile.nickname if message.profile else "???"
+                    content = message.content or ""
+                    if content:
+                        self.donations.append({
+                            "nickname": nickname,
+                            "content": content,
+                        })
 
-            # run()은 내부적으로 asyncio.run()을 호출
-            self._client.run()
+                @self._client.event
+                async def on_connect():
+                    print("채팅 연결 성공! 메시지 수신 중...")
 
-        except Exception as e:
-            if self._running:
-                print(f"채팅 리더 오류: {e}")
+                self._client.run()
+
+            except Exception as e:
+                if not self._running:
+                    break
+                print(f"채팅 리더 오류: {e} ({retry_delay}초 후 재연결...)")
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
 
     def get_recent_messages(self, count: int = 10) -> list[dict]:
         """최근 채팅 메시지 반환"""

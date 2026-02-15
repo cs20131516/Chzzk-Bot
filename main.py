@@ -73,13 +73,16 @@ class ChzzkVoiceBot:
         print("=" * 60)
 
         # [1] 방송 URL 입력
+        default_id = Config.CHZZK_CHANNEL_ID or ""
         print("\n[1/5] 방송 URL 입력")
-        url = input("치지직 방송 URL: ").strip()
-        if not url:
+        url = input(f"치지직 방송 URL (Enter: .env 기본값): ").strip()
+        if url:
+            channel_id = extract_channel_id(url)
+        elif default_id:
+            channel_id = default_id
+        else:
             print("URL이 입력되지 않았습니다.")
             return False
-
-        channel_id = extract_channel_id(url)
         print(f"채널 ID: {channel_id}")
 
         # 채널별 메모리 초기화
@@ -127,9 +130,9 @@ class ChzzkVoiceBot:
         speaker = select_speaker()
         self.audio_capture = AudioCapture(speaker=speaker)
 
-        # [5] 채팅 입력창 위치 (Mock이 아닐 때만)
+        # [5] 채팅 인증 (Mock이 아닐 때만)
         if not self.use_mock:
-            if not self.chat_sender.authenticate():
+            if not self.chat_sender.authenticate(channel_id):
                 return False
 
         print("\n초기화 완료!")
@@ -147,8 +150,6 @@ class ChzzkVoiceBot:
         print(f"  현재 모드: {mode_label} (m키로 전환)")
         print("  ASR ─→ 응답 ─→ 전송 각각 독립 동작")
         print("  Ctrl+C로 종료")
-        if not self.use_mock:
-            print("  긴급 중지: 마우스를 화면 좌상단 모서리로")
         print("=" * 60 + "\n")
 
         self.stats["start_time"] = time.time()
@@ -293,9 +294,18 @@ class ChzzkVoiceBot:
                         time.sleep(1)
                         continue
 
-                # 최근 채팅 가져오기
+                # 이미 대기 중인 응답이 있으면 스킵
+                if not self.response_queue.empty():
+                    time.sleep(1)
+                    continue
+
+                # 최근 채팅 가져오기 (단순 반응만 복사)
                 response = self._get_mimic_response()
                 if not response or response == last_seen:
+                    time.sleep(1)
+                    continue
+
+                if not self._is_simple_reaction(response):
                     time.sleep(1)
                     continue
 
