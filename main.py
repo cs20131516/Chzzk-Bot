@@ -2,6 +2,8 @@ import os
 import time
 import signal
 import sys
+import queue
+import threading
 from config import Config
 from audio_capture import AudioCapture, select_speaker
 from speech_recognition import SpeechRecognizer
@@ -15,12 +17,12 @@ from memory.memory_manager import MemoryManager
 class ChzzkVoiceBot:
     """치지직 음성인식 자동 채팅 봇
 
-    흐름:
-    1. 방송 URL 입력
-    2. 채팅 리더: 실시간 채팅 메시지 수집
-    3. 오디오 캡처: 스트리머 음성 → Whisper → 텍스트
-    4. LLM: 스트리머 발언 + 채팅 분위기 → 응답 생성
-    5. pyautogui: 채팅창에 자동 입력
+    파이프라인 (각 단계가 독립 스레드로 동작):
+    1. AudioCapture 스레드: 시스템 오디오 루프백 → audio_queue
+    2. ASR Worker 스레드: audio_queue → 음성인식 → speech_queue
+    3. LLM Worker 스레드: speech_queue → 응답 생성 → response_queue
+    4. Main 스레드: response_queue → 승인/전송/메모리
+    5. ChatReader 스레드: WebSocket → 실시간 채팅 수집
     """
 
     def __init__(self, use_mock=False, auto_send=False):
@@ -36,10 +38,21 @@ class ChzzkVoiceBot:
         self.my_chat_memory = None
         self.memory_manager = None
 
-        self.is_running = False
+        # 파이프라인 큐
+        self.speech_queue = queue.Queue()    # ASR → LLM
+        self.response_queue = queue.Queue()  # LLM → Main
+
+        # 스레드 제어
+        self._stop_event = threading.Event()
+        self._asr_thread = None
+        self._llm_thread = None
+
+        # 쿨다운 (LLM worker + main thread 공유)
         self.last_response_time = 0
+        self._cooldown_lock = threading.Lock()
+
         self.use_mock = use_mock
-        self.auto_send = auto_send  # False면 수동 승인 모드
+        self.auto_send = auto_send
 
         self.stats = {
             "processed_speeches": 0,
@@ -119,29 +132,42 @@ class ChzzkVoiceBot:
             return
 
         print("\n" + "=" * 60)
-        print("  봇 시작!")
-        print("  스트리머 음성 + 채팅 분위기를 보고 자동 채팅합니다.")
+        print("  봇 시작! (동시성 파이프라인)")
+        print("  ASR ─→ LLM ─→ 전송 각각 독립 동작")
         print("  Ctrl+C로 종료")
         if not self.use_mock:
             print("  긴급 중지: 마우스를 화면 좌상단 모서리로")
         print("=" * 60 + "\n")
 
-        self.is_running = True
         self.stats["start_time"] = time.time()
+        self._stop_event.clear()
+
+        # 오디오 캡처 시작 (기존 스레드)
         self.audio_capture.start()
 
+        # 워커 스레드 시작
+        self._asr_thread = threading.Thread(
+            target=self._asr_worker, name="ASR-Worker", daemon=True
+        )
+        self._llm_thread = threading.Thread(
+            target=self._llm_worker, name="LLM-Worker", daemon=True
+        )
+        self._asr_thread.start()
+        self._llm_thread.start()
+
+        # 메인 스레드에서 응답 처리
         try:
-            self.main_loop()
+            self._response_handler()
         except KeyboardInterrupt:
             print("\n\n종료...")
         finally:
             self.stop()
 
-    def main_loop(self):
-        """메인 처리 루프"""
-        while self.is_running:
+    def _asr_worker(self):
+        """ASR 워커 스레드: 오디오 → 음성인식 → speech_queue"""
+        while not self._stop_event.is_set():
             try:
-                # 1. 오디오 캡처
+                # 1. 오디오 청크 수집
                 audio_data = self.audio_capture.get_audio_chunk(timeout=1.0)
                 if audio_data is None:
                     continue
@@ -150,39 +176,58 @@ class ChzzkVoiceBot:
                 if not self.audio_capture.is_speech_present(audio_data):
                     continue
 
-                print("\n음성 감지됨, 인식 중...")
+                print("\n[ASR] 음성 감지됨, 인식 중...")
 
                 # 3. 음성 인식
                 text = self.speech_recognizer.transcribe(audio_data)
                 if not text:
-                    print("  인식 실패")
+                    print("[ASR] 인식 실패")
                     continue
 
-                print(f"  스트리머: {text}")
+                print(f"[ASR] 스트리머: {text}")
 
                 # 4. 유효성 검증
                 if not self.speech_recognizer.is_valid_speech(text):
-                    print("  무효한 발화 (무시)")
+                    print("[ASR] 무효한 발화 (무시)")
                     continue
 
-                # 5. 쿨다운
-                current_time = time.time()
-                if current_time - self.last_response_time < Config.RESPONSE_COOLDOWN:
-                    remaining = Config.RESPONSE_COOLDOWN - (current_time - self.last_response_time)
-                    print(f"  쿨다운 ({remaining:.1f}초)")
+                # 5. speech_queue에 전달
+                self.speech_queue.put(text)
+
+            except Exception as e:
+                if not self._stop_event.is_set():
+                    print(f"\n[ASR] 오류: {e}")
+                    time.sleep(1)
+
+    def _llm_worker(self):
+        """LLM 워커 스레드: speech_queue → LLM 응답 → response_queue"""
+        while not self._stop_event.is_set():
+            try:
+                # 1. 음성 인식 결과 대기
+                try:
+                    text = self.speech_queue.get(timeout=1.0)
+                except queue.Empty:
                     continue
+
+                # 2. 쿨다운 체크
+                with self._cooldown_lock:
+                    current_time = time.time()
+                    if current_time - self.last_response_time < Config.RESPONSE_COOLDOWN:
+                        remaining = Config.RESPONSE_COOLDOWN - (current_time - self.last_response_time)
+                        print(f"[LLM] 쿨다운 ({remaining:.1f}초) - 스킵: {text[:20]}")
+                        continue
 
                 self.stats["processed_speeches"] += 1
 
-                # 6. 채팅 컨텍스트 가져오기
+                # 3. 채팅 컨텍스트 가져오기
                 chat_context = ""
                 if self.chat_reader:
                     chat_context = self.chat_reader.get_chat_context(10)
                     if chat_context != "(채팅 없음)":
-                        print(f"  채팅 컨텍스트: {len(self.chat_reader.messages)}개")
+                        print(f"[LLM] 채팅 컨텍스트: {len(self.chat_reader.messages)}개")
 
-                # 7. LLM 응답 생성 (음성 + 채팅 컨텍스트 + 메모리)
-                print("  응답 생성 중...")
+                # 4. LLM 응답 생성
+                print("[LLM] 응답 생성 중...")
                 response = self.llm_handler.generate_response(
                     text, chat_context,
                     streamer_memory=self.streamer_memory.get_facts_as_prompt(),
@@ -190,16 +235,34 @@ class ChzzkVoiceBot:
                     my_chat_memory=self.my_chat_memory.get_facts_as_prompt()
                 )
                 if not response:
-                    print("  응답 생성 실패")
+                    print("[LLM] 응답 생성 실패")
                     continue
 
-                print(f"  응답: {response}")
+                print(f"[LLM] 응답: {response}")
 
-                # 8. 채팅 전송 (수동 승인 or 자동)
+                # 5. response_queue에 전달
+                self.response_queue.put((text, response, chat_context))
+
+            except Exception as e:
+                if not self._stop_event.is_set():
+                    print(f"\n[LLM] 오류: {e}")
+                    time.sleep(1)
+
+    def _response_handler(self):
+        """메인 스레드: response_queue → 승인/전송/메모리"""
+        while not self._stop_event.is_set():
+            try:
+                # 1. 응답 대기
+                try:
+                    text, response, chat_context = self.response_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+
+                # 2. 채팅 전송 (수동 승인 or 자동)
                 if self.auto_send:
                     success = self.chat_sender.send_message(response)
                 else:
-                    choice = input("  [Enter=전송 / s=스킵 / e=수정]: ").strip().lower()
+                    choice = input(f"  [{response}] Enter=전송 / s=스킵 / e=수정: ").strip().lower()
                     if choice == 's':
                         print("  스킵됨")
                         continue
@@ -213,18 +276,20 @@ class ChzzkVoiceBot:
 
                 if success:
                     self.stats["sent_messages"] += 1
-                    self.last_response_time = current_time
+                    with self._cooldown_lock:
+                        self.last_response_time = time.time()
                     self.memory_manager.record_interaction(
                         text, response, chat_context
                     )
 
             except Exception as e:
-                print(f"\n오류: {e}")
-                time.sleep(1)
+                if not self._stop_event.is_set():
+                    print(f"\n오류: {e}")
+                    time.sleep(1)
 
     def stop(self):
         """종료"""
-        self.is_running = False
+        self._stop_event.set()
 
         # 메모리 저장
         if self.memory_manager:
@@ -239,6 +304,12 @@ class ChzzkVoiceBot:
             self.chat_reader.stop()
         if self.chat_sender:
             self.chat_sender.disconnect()
+
+        # 워커 스레드 종료 대기
+        if self._asr_thread and self._asr_thread.is_alive():
+            self._asr_thread.join(timeout=3)
+        if self._llm_thread and self._llm_thread.is_alive():
+            self._llm_thread.join(timeout=3)
 
         if self.stats["start_time"]:
             runtime = time.time() - self.stats["start_time"]

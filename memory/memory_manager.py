@@ -18,6 +18,7 @@ class MemoryManager:
 
         self.interaction_buffer = []
         self.chat_context_buffer = []
+        self._buffer_lock = threading.Lock()
         self.update_interval = 5
         self.interaction_count = 0
 
@@ -26,18 +27,19 @@ class MemoryManager:
 
     def record_interaction(self, streamer_speech, bot_response, chat_context=""):
         """상호작용 기록"""
-        self.interaction_buffer.append({
-            "streamer": streamer_speech,
-            "bot": bot_response,
-            "time": time.time()
-        })
-        if chat_context:
-            self.chat_context_buffer.append(chat_context)
+        with self._buffer_lock:
+            self.interaction_buffer.append({
+                "streamer": streamer_speech,
+                "bot": bot_response,
+                "time": time.time()
+            })
+            if chat_context:
+                self.chat_context_buffer.append(chat_context)
 
-        if len(self.interaction_buffer) > 10:
-            self.interaction_buffer = self.interaction_buffer[-10:]
-        if len(self.chat_context_buffer) > 5:
-            self.chat_context_buffer = self.chat_context_buffer[-5:]
+            if len(self.interaction_buffer) > 10:
+                self.interaction_buffer = self.interaction_buffer[-10:]
+            if len(self.chat_context_buffer) > 5:
+                self.chat_context_buffer = self.chat_context_buffer[-5:]
 
         self.interaction_count += 1
 
@@ -60,15 +62,19 @@ class MemoryManager:
 
     def _format_interactions(self):
         """상호작용 버퍼를 텍스트로 변환"""
+        with self._buffer_lock:
+            buffer_copy = list(self.interaction_buffer)
         lines = []
-        for item in self.interaction_buffer:
+        for item in buffer_copy:
             lines.append(f"스트리머: {item['streamer']}")
             lines.append(f"봇: {item['bot']}")
         return "\n".join(lines)
 
     def _format_chat_contexts(self):
         """채팅 컨텍스트 버퍼를 텍스트로 변환"""
-        return "\n---\n".join(self.chat_context_buffer[-3:])
+        with self._buffer_lock:
+            contexts = list(self.chat_context_buffer[-3:])
+        return "\n---\n".join(contexts)
 
     def _update_streamer_memory(self, interactions_text):
         """스트리머 메모리 업데이트"""

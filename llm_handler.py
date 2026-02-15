@@ -1,5 +1,6 @@
 import requests
 import json
+import threading
 from collections import deque
 from config import Config
 
@@ -18,6 +19,7 @@ class LLMHandler:
         self.host = host or Config.OLLAMA_HOST
         self.api_url = f"{self.host}/api/generate"
         self.context = deque(maxlen=context_size)
+        self._context_lock = threading.Lock()
         self.system_prompt = self._get_system_prompt()
 
     def _get_system_prompt(self):
@@ -79,7 +81,8 @@ Remember: KOREAN ONLY! Never use English in your response.
             role: 역할 (streamer, bot)
             text: 발화 내용
         """
-        self.context.append({"role": role, "text": text})
+        with self._context_lock:
+            self.context.append({"role": role, "text": text})
 
     def _build_prompt(self, streamer_speech, chat_context="",
                       streamer_memory="", chat_memory="", my_chat_memory=""):
@@ -118,9 +121,10 @@ Remember: KOREAN ONLY! Never use English in your response.
 
         # 대화 히스토리
         prompt_parts.append("\n대화 히스토리:")
-        for item in self.context:
-            role_name = "스트리머" if item["role"] == "streamer" else "나"
-            prompt_parts.append(f"{role_name}: {item['text']}")
+        with self._context_lock:
+            for item in list(self.context):
+                role_name = "스트리머" if item["role"] == "streamer" else "나"
+                prompt_parts.append(f"{role_name}: {item['text']}")
 
         # 현재 스트리머 발언 추가
         prompt_parts.append(f"\n스트리머: {streamer_speech}")
@@ -226,7 +230,8 @@ Remember: KOREAN ONLY! Never use English in your response.
 
     def clear_context(self):
         """대화 컨텍스트 초기화"""
-        self.context.clear()
+        with self._context_lock:
+            self.context.clear()
 
 
 def test_llm():
