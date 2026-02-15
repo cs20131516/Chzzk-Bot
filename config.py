@@ -15,6 +15,11 @@ class Config:
     # Ollama 설정
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
+
+    # LLM 생성 설정
+    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "50"))
+    LLM_NUM_CTX = int(os.getenv("LLM_NUM_CTX", "2048"))
 
     # ASR 설정
     ASR_MODEL = os.getenv("ASR_MODEL", "Qwen/Qwen3-ASR-0.6B")
@@ -26,6 +31,8 @@ class Config:
     # 채팅 설정
     MIN_SPEECH_LENGTH = int(os.getenv("MIN_SPEECH_LENGTH", "3"))
     RESPONSE_COOLDOWN = int(os.getenv("RESPONSE_COOLDOWN", "10"))
+    RESPONSE_CHANCE = float(os.getenv("RESPONSE_CHANCE", "1.0"))
+    SMART_RESPONSE = os.getenv("SMART_RESPONSE", "false").lower() == "true"
 
     @classmethod
     def validate(cls):
@@ -58,8 +65,12 @@ class Config:
         print(f"ASR 모델: {cls.ASR_MODEL}")
         print(f"오디오 샘플레이트: {cls.AUDIO_SAMPLE_RATE}Hz")
         print(f"오디오 청크 길이: {cls.AUDIO_CHUNK_DURATION}초")
+        print(f"LLM 최대 토큰: {cls.LLM_MAX_TOKENS}")
+        print(f"LLM 컨텍스트: {cls.LLM_NUM_CTX}")
         print(f"최소 발화 길이: {cls.MIN_SPEECH_LENGTH}초")
         print(f"응답 쿨다운: {cls.RESPONSE_COOLDOWN}초")
+        print(f"응답 확률: {cls.RESPONSE_CHANCE}")
+        print(f"스마트 응답: {'켜짐' if cls.SMART_RESPONSE else '꺼짐'}")
         print(f"치지직 채널 ID: {cls.CHZZK_CHANNEL_ID}")
         print(f"API 자격증명: {'설정됨' if cls.CHZZK_CLIENT_ID else '미설정'}")
         print("=" * 50)

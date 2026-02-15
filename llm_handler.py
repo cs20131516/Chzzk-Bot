@@ -162,10 +162,12 @@ Remember: KOREAN ONLY! Never use English in your response.
                 "model": self.model_name,
                 "prompt": prompt,
                 "stream": False,
+                "keep_alive": Config.OLLAMA_KEEP_ALIVE,
                 "options": {
                     "temperature": 0.8,
                     "top_p": 0.9,
-                    "max_tokens": 100
+                    "num_predict": Config.LLM_MAX_TOKENS,
+                    "num_ctx": Config.LLM_NUM_CTX
                 }
             }
 
@@ -227,6 +229,41 @@ Remember: KOREAN ONLY! Never use English in your response.
             return None
 
         return text
+
+    def should_respond(self, streamer_speech, chat_context=""):
+        """스마트 응답: 이 발화에 응답할지 LLM이 판단
+
+        Returns:
+            bool: 응답해야 하면 True
+        """
+        prompt = f"""너는 치지직 채팅 시청자야. 스트리머가 말한 내용을 보고,
+시청자로서 채팅을 칠 만한 상황인지 판단해.
+
+스트리머: "{streamer_speech}"
+{f'현재 채팅: {chat_context}' if chat_context else ''}
+
+채팅을 쳐야 하면 "YES", 굳이 안 쳐도 되면 "NO"만 답해.
+(혼잣말, 단순 조작, 의미없는 소리 등은 NO)"""
+
+        try:
+            payload = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "keep_alive": Config.OLLAMA_KEEP_ALIVE,
+                "options": {
+                    "temperature": 0.3,
+                    "num_predict": 5,
+                    "num_ctx": Config.LLM_NUM_CTX
+                }
+            }
+            response = requests.post(self.api_url, json=payload, timeout=10)
+            if response.status_code == 200:
+                answer = response.json().get("response", "").strip().upper()
+                return "YES" in answer
+        except Exception:
+            pass
+        return True  # 판단 실패 시 응답
 
     def clear_context(self):
         """대화 컨텍스트 초기화"""

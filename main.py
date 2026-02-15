@@ -3,6 +3,7 @@ import time
 import signal
 import sys
 import queue
+import random
 import threading
 from config import Config
 from audio_capture import AudioCapture, select_speaker
@@ -199,13 +200,27 @@ class ChzzkVoiceBot:
                     print(f"\n[ASR] 오류: {e}")
                     time.sleep(1)
 
+    def _drain_speech_queue(self):
+        """speech_queue에서 가장 최신 텍스트만 가져오고 나머지는 버림"""
+        text = self.speech_queue.get(timeout=1.0)
+        skipped = 0
+        while not self.speech_queue.empty():
+            try:
+                text = self.speech_queue.get_nowait()
+                skipped += 1
+            except queue.Empty:
+                break
+        if skipped > 0:
+            print(f"[LLM] {skipped}개 이전 발화 스킵, 최신 처리: {text[:20]}")
+        return text
+
     def _llm_worker(self):
         """LLM 워커 스레드: speech_queue → LLM 응답 → response_queue"""
         while not self._stop_event.is_set():
             try:
-                # 1. 음성 인식 결과 대기
+                # 1. 최신 음성 인식 결과만 가져오기 (오래된 것 버림)
                 try:
-                    text = self.speech_queue.get(timeout=1.0)
+                    text = self._drain_speech_queue()
                 except queue.Empty:
                     continue
 
@@ -217,16 +232,27 @@ class ChzzkVoiceBot:
                         print(f"[LLM] 쿨다운 ({remaining:.1f}초) - 스킵: {text[:20]}")
                         continue
 
-                self.stats["processed_speeches"] += 1
+                # 3. 응답 확률 체크
+                if Config.RESPONSE_CHANCE < 1.0 and random.random() > Config.RESPONSE_CHANCE:
+                    print(f"[LLM] 확률 스킵 ({Config.RESPONSE_CHANCE:.0%}): {text[:20]}")
+                    continue
 
-                # 3. 채팅 컨텍스트 가져오기
+                # 4. 채팅 컨텍스트 가져오기
                 chat_context = ""
                 if self.chat_reader:
                     chat_context = self.chat_reader.get_chat_context(10)
                     if chat_context != "(채팅 없음)":
                         print(f"[LLM] 채팅 컨텍스트: {len(self.chat_reader.messages)}개")
 
-                # 4. LLM 응답 생성
+                # 5. 스마트 응답 (켜져 있으면 LLM이 응답할지 판단)
+                if Config.SMART_RESPONSE:
+                    if not self.llm_handler.should_respond(text, chat_context):
+                        print(f"[LLM] 스마트 스킵: {text[:30]}")
+                        continue
+
+                self.stats["processed_speeches"] += 1
+
+                # 6. LLM 응답 생성
                 print("[LLM] 응답 생성 중...")
                 response = self.llm_handler.generate_response(
                     text, chat_context,
@@ -240,7 +266,7 @@ class ChzzkVoiceBot:
 
                 print(f"[LLM] 응답: {response}")
 
-                # 5. response_queue에 전달
+                # 7. response_queue에 전달
                 self.response_queue.put((text, response, chat_context))
 
             except Exception as e:
