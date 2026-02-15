@@ -11,11 +11,8 @@ import queue
 import threading
 from config import Config
 
-try:
-    import soundcard as sc
-    SOUNDCARD_AVAILABLE = True
-except ImportError:
-    SOUNDCARD_AVAILABLE = False
+import soundcard as sc  # type: ignore[import-untyped]
+SOUNDCARD_AVAILABLE = True
 
 
 def list_speakers():

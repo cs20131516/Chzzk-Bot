@@ -29,17 +29,17 @@ class ChzzkVoiceBot:
     """
 
     def __init__(self, use_mock=False, auto_send=False):
-        self.audio_capture = None
+        self.audio_capture: AudioCapture | None = None
         self.speech_recognizer = SpeechRecognizer()
-        self.llm_handler = None  # initialize에서 채널별 채팅 로그와 함께 생성
+        self.llm_handler: LLMHandler | None = None  # initialize에서 채널별 채팅 로그와 함께 생성
         self.chat_sender = MockChatSender() if use_mock else ChatSender()
-        self.chat_reader = None
+        self.chat_reader: ChatReader | None = None
 
         # 메모리 시스템 (initialize에서 channel_id 확정 후 초기화)
-        self.streamer_memory = None
-        self.chat_memory = None
-        self.my_chat_memory = None
-        self.memory_manager = None
+        self.streamer_memory: MemoryStore | None = None
+        self.chat_memory: MemoryStore | None = None
+        self.my_chat_memory: MemoryStore | None = None
+        self.memory_manager: MemoryManager | None = None
 
         # 파이프라인 큐
         self.speech_queue = queue.Queue()    # ASR → LLM
@@ -164,6 +164,12 @@ class ChzzkVoiceBot:
             self._warmup_announced = True
 
         # 오디오 캡처 시작 (기존 스레드)
+        assert self.audio_capture is not None
+        assert self.llm_handler is not None
+        assert self.streamer_memory is not None
+        assert self.chat_memory is not None
+        assert self.my_chat_memory is not None
+        assert self.memory_manager is not None
         self.audio_capture.start()
 
         # 워커 스레드 시작
@@ -307,6 +313,7 @@ class ChzzkVoiceBot:
 
     def _asr_worker(self):
         """ASR 워커 스레드: 오디오 → 음성인식 → speech_queue"""
+        assert self.audio_capture is not None
         while not self._stop_event.is_set():
             try:
                 # 1. 오디오 청크 수집
@@ -361,6 +368,10 @@ class ChzzkVoiceBot:
 
     def _llm_worker(self):
         """LLM 워커 스레드: speech_queue → LLM 응답 → response_queue"""
+        assert self.llm_handler is not None
+        assert self.streamer_memory is not None
+        assert self.chat_memory is not None
+        assert self.my_chat_memory is not None
         while not self._stop_event.is_set():
             try:
                 # 1. 최신 음성 인식 결과만 가져오기 (오래된 것 버림)
@@ -460,6 +471,7 @@ class ChzzkVoiceBot:
 
     def _response_handler(self):
         """메인 스레드: response_queue → 승인/전송/메모리"""
+        assert self.memory_manager is not None
         while not self._stop_event.is_set():
             try:
                 # 1. 응답 대기

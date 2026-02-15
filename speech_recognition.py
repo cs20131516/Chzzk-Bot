@@ -12,7 +12,8 @@ class SpeechRecognizer:
             model_name: ASR 모델 이름 (예: Qwen/Qwen3-ASR-0.6B, Qwen/Qwen3-ASR-1.7B)
         """
         self.model_name = model_name or Config.ASR_MODEL
-        self.model = None
+        from typing import Any
+        self.model: Any = None
         self.is_loaded = False
 
     def load_model(self):
