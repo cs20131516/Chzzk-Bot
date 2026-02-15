@@ -139,7 +139,7 @@ pip install -r requirements.txt
 
 ```bash
 # https://ollama.ai/download 에서 설치 후
-ollama pull qwen3:4b    # 한국어 지원 모델 (권장)
+ollama pull qwen3:8b    # 한국어 지원 모델 (권장, 4b는 instruction 미준수)
 
 # Ollama 서버 실행
 ollama serve
@@ -157,12 +157,13 @@ CHZZK_CLIENT_ID=your_client_id
 CHZZK_CLIENT_SECRET=your_client_secret
 CHZZK_CHANNEL_ID=target_channel_id
 
-OLLAMA_MODEL=qwen3:4b
+OLLAMA_MODEL=qwen3:8b
 ASR_MODEL=Qwen/Qwen3-ASR-0.6B
 
 AUDIO_SAMPLE_RATE=48000
 AUDIO_CHUNK_DURATION=5
 RESPONSE_COOLDOWN=10
+RESPONSE_MODE=ai        # ai (LLM 응답) / mimic (채팅 따라하기)
 ```
 
 ## 사용 방법
@@ -177,6 +178,7 @@ python main.py
 - `Enter` = 전송
 - `s` = 스킵
 - `e` = 수정 후 전송
+- `m` = 모드 전환 (AI ↔ 따라하기)
 
 ### 자동 전송 모드
 
@@ -226,7 +228,7 @@ python main.py --mock
 |------|------|----------|
 | `audio_capture.py` | 시스템 오디오 루프백 캡처 | soundcard, WASAPI |
 | `speech_recognition.py` | 음성 → 텍스트 변환 | Qwen3-ASR |
-| `llm_handler.py` | 자연스러운 채팅 응답 생성 | Ollama (qwen3:4b) |
+| `llm_handler.py` | 자연스러운 채팅 응답 생성 | Ollama (qwen3:8b) |
 | `chat_reader.py` | 실시간 채팅 메시지 수집 | chzzkpy WebSocket |
 | `chat_sender.py` | 채팅창 자동 입력 | pyautogui + pyperclip |
 | `config.py` | 환경 변수 관리 | python-dotenv |
@@ -246,11 +248,12 @@ python main.py --mock
 
 ### Ollama 모델
 
-| 모델 | 한국어 | 속도 |
-|------|--------|------|
-| qwen3:4b | 좋음 (권장) | 빠름 |
-| qwen3:8b | 매우 좋음 | 보통 |
-| gemma2 | 좋음 | 보통 |
+| 모델 | 한국어 | 속도 | 비고 |
+|------|--------|------|------|
+| qwen3:8b | 매우 좋음 (권장) | 보통 | instruction 준수 우수 |
+| exaone3.5:7.8b | 매우 좋음 | 보통 | LG AI, 한국어 특화 |
+| exaone3.5:2.4b | 좋음 | 빠름 | 경량 한국어 모델 |
+| qwen3:4b | 보통 | 빠름 | 영어로 응답하는 경우 있음 |
 
 ## 트러블슈팅
 
@@ -263,7 +266,9 @@ python main.py --mock
 - GPU 사용 설정 (CUDA)
 
 ### LLM이 영어로 응답함
-- `OLLAMA_MODEL=qwen3:4b`로 변경 (`ollama pull qwen3:4b` 필요)
+- `OLLAMA_MODEL=qwen3:8b` 이상 사용 권장 (`ollama pull qwen3:8b`)
+- qwen3:4b는 instruction을 따르지 않아 영어로 응답하는 경우가 많음
+- EXAONE 3.5도 한국어 응답에 강함 (`ollama pull exaone3.5:7.8b`)
 
 ### 채팅 입력이 안 됨
 - 채팅 입력창 위치 설정 시 정확한 위치에 마우스를 올려둘 것

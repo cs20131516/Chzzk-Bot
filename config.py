@@ -33,6 +33,8 @@ class Config:
     RESPONSE_COOLDOWN = int(os.getenv("RESPONSE_COOLDOWN", "10"))
     RESPONSE_CHANCE = float(os.getenv("RESPONSE_CHANCE", "1.0"))
     SMART_RESPONSE = os.getenv("SMART_RESPONSE", "false").lower() == "true"
+    RESPONSE_MODE = os.getenv("RESPONSE_MODE", "ai")  # "ai" 또는 "mimic"
+    WARMUP_SECONDS = int(os.getenv("WARMUP_SECONDS", "0"))  # 시작 후 관찰만 하는 시간 (초)
 
     @classmethod
     def validate(cls):
@@ -71,6 +73,8 @@ class Config:
         print(f"응답 쿨다운: {cls.RESPONSE_COOLDOWN}초")
         print(f"응답 확률: {cls.RESPONSE_CHANCE}")
         print(f"스마트 응답: {'켜짐' if cls.SMART_RESPONSE else '꺼짐'}")
+        print(f"응답 모드: {cls.RESPONSE_MODE}")
+        print(f"워밍업: {cls.WARMUP_SECONDS}초" if cls.WARMUP_SECONDS > 0 else "워밍업: 없음")
         print(f"치지직 채널 ID: {cls.CHZZK_CHANNEL_ID}")
         print(f"API 자격증명: {'설정됨' if cls.CHZZK_CLIENT_ID else '미설정'}")
         print("=" * 50)

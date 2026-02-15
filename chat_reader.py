@@ -3,6 +3,7 @@
 로그인 없이 READ 모드로 채팅을 수신합니다.
 채널 ID만 있으면 실시간 채팅 메시지를 수집할 수 있습니다.
 """
+import time
 import asyncio
 import threading
 from collections import deque
@@ -52,6 +53,7 @@ class ChatReader:
                 self.messages.append({
                     "nickname": nickname,
                     "content": message.content,
+                    "time": time.time(),
                 })
 
             @self._client.event
@@ -84,6 +86,13 @@ class ChatReader:
         """최근 도네이션 메시지 반환"""
         donations = list(self.donations)
         return donations[-count:]
+
+    def get_chat_rate(self, window: int = 30) -> float:
+        """최근 N초 동안의 채팅 속도 (메시지/분)"""
+        now = time.time()
+        cutoff = now - window
+        recent = [m for m in self.messages if m.get("time", 0) > cutoff]
+        return len(recent) / (window / 60)
 
     def get_chat_context(self, count: int = 10) -> str:
         """LLM 프롬프트용 채팅 컨텍스트 문자열 반환"""

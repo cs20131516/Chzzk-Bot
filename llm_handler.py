@@ -1,3 +1,4 @@
+import os
 import re
 import requests
 import json
@@ -9,43 +10,68 @@ from config import Config
 class LLMHandler:
     """Ollama 기반 LLM 처리 클래스"""
 
-    def __init__(self, model_name=None, host=None, context_size=5):
+    def __init__(self, model_name=None, host=None, context_size=5, chat_log_path=None):
         """
         Args:
             model_name: Ollama 모델 이름
             host: Ollama 서버 호스트
             context_size: 유지할 대화 컨텍스트 크기
+            chat_log_path: 내 채팅 로그 파일 경로 (스타일 학습용)
         """
         self.model_name = model_name or Config.OLLAMA_MODEL
         self.host = host or Config.OLLAMA_HOST
         self.api_url = f"{self.host}/api/chat"
         self.context = deque(maxlen=context_size)
         self._context_lock = threading.Lock()
+        self.my_chat_examples = self._load_chat_log(chat_log_path)
         self.system_prompt = self._get_system_prompt()
+
+    def _load_chat_log(self, path):
+        """내 채팅 로그 파일 로드 (한 줄에 하나씩)"""
+        if not path or not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+            if lines:
+                print(f"내 채팅 로그 로드: {len(lines)}개")
+            return lines
+        except Exception as e:
+            print(f"채팅 로그 로드 실패: {e}")
+            return []
 
     def _get_system_prompt(self):
         """시스템 프롬프트 생성"""
-        return """너는 치지직 방송 채팅에 참여하는 재밌는 시청자야.
-스트리머가 하는 말에 자연스럽고 재미있게 반응해.
+        base = """너는 치지직 방송 시청자야. 채팅창에 한 줄만 친다.
 
-필수 규칙:
-- 반드시 한국어로만 답변해
-- 50자 이내로 짧게
-- 이모티콘 활용 (ㅋㅋㅋ, ㅎㅎ, ㄷㄷ 등)
-- 반말 사용
-- 과한 칭찬 금지
-- 자연스럽게, 스팸처럼 보이지 않게
-- 오직 채팅 메시지만 출력, 설명 금지
+핵심 규칙:
+- 스트리머가 한 말의 내용에 직접 반응해 (무슨 말인지 잘 듣고 거기에 맞게)
+- 다른 시청자들이 치는 채팅 분위기에 맞춰서 써
+- 매번 다른 표현을 써 (같은 말 반복 금지)
+- 한국어, 반말, 50자 이내
+- 채팅 메시지만 출력 (설명이나 부연 금지)
 
-예시:
-스트리머: "오늘 날씨 진짜 좋네요"
-응답: 인정ㅋㅋ 날씨 개꿀
+나쁜 예 (하지 마):
+- 아무 말에나 "ㅋㅋㅋ" "끝내줘" 붙이기
+- 스트리머 말 앵무새처럼 따라하기
+- 맥락 없이 "진짜?" "대박" 같은 빈 리액션"""
 
-스트리머: "이거 어떻게 깨지?"
-응답: 왼쪽으로 가보세요!
+        # 내 채팅 로그가 있으면 스타일 학습 예시로 추가
+        if self.my_chat_examples:
+            import random
+            samples = random.sample(self.my_chat_examples, min(20, len(self.my_chat_examples)))
+            base += "\n\n내가 평소에 치는 채팅 스타일 (이 말투와 분위기를 따라해):\n"
+            base += "\n".join(f"- {s}" for s in samples)
+        else:
+            base += """
 
-스트리머: "오늘 방송 재미있나요?"
-응답: 넵 재밌어요 ㅎㅎ"""
+좋은 예:
+스트리머: "이 맵 진짜 어렵다" → 거기 왼쪽으로 가보세요
+스트리머: "드디어 끝났다" → 수고하셨습니다 ㅎㅎ
+스트리머: "어 이게 뭐지" → 뭔가 이상한데
+스트리머: "오늘 몇 시까지 해요?" → 끝까지 달려주세요"""
+
+        return base
 
     def check_connection(self):
         """Ollama 서버 연결 확인"""
@@ -120,8 +146,8 @@ class LLMHandler:
                 user_parts.append(f"{role_name}: {item['text']}")
 
         # 현재 스트리머 발언
-        user_parts.append(f"스트리머: {streamer_speech}")
-        user_parts.append("위 스트리머 발언에 대한 한국어 채팅 한 줄:")
+        user_parts.append(f"스트리머가 방금 한 말: \"{streamer_speech}\"")
+        user_parts.append("이 말에 대한 채팅 한 줄 (다른 시청자 채팅과 겹치지 않게):")
 
         messages.append({"role": "user", "content": "\n".join(user_parts)})
 
@@ -151,8 +177,9 @@ class LLMHandler:
                 "think": False,
                 "keep_alive": Config.OLLAMA_KEEP_ALIVE,
                 "options": {
-                    "temperature": 0.8,
+                    "temperature": 0.9,
                     "top_p": 0.9,
+                    "repeat_penalty": 1.3,
                     "num_predict": Config.LLM_MAX_TOKENS,
                     "num_ctx": Config.LLM_NUM_CTX
                 }
