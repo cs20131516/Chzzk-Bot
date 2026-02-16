@@ -179,7 +179,7 @@ RESPONSE_CHANCE=1.0
 RESPONSE_MODE=ai        # ai (LLM 응답) / mimic (채팅 따라하기)
 WARMUP_SECONDS=0         # 시작 후 관찰만 하는 시간 (초)
 
-# 네이버 로그인 쿠키 (채팅 전송용)
+# 네이버 로그인 쿠키 (채팅 전송 + 성인인증 채널용)
 # 크롬 F12 → Application → Cookies → chzzk.naver.com 에서 복사
 NID_AUT=
 NID_SES=
@@ -295,6 +295,10 @@ python main.py --mock
 - `.env`에 `NID_AUT`, `NID_SES` 쿠키가 올바른지 확인 (크롬 F12 → Application → Cookies → chzzk.naver.com)
 - 쿠키 미설정 시 브라우저 자동 로그인이 뜹니다 (네이버 로그인 필요)
 - 치지직 채팅이 로그인 사용자만 가능한 채널인지 확인
+
+### "Adult verification" 오류
+- 성인인증 채널은 NID_AUT/NID_SES 쿠키 필수 (채팅 읽기/전송 모두 필요)
+- 첫 실행 시 브라우저 로그인하면 자동 저장되어 이후 자동 인증
 
 ## 주의사항
 

@@ -108,7 +108,11 @@ class ChzzkVoiceBot:
 
         # [2] 채팅 리더 시작 (실시간 채팅 수집)
         print("\n[2/5] 채팅 리더 시작...")
-        self.chat_reader = ChatReader(channel_id)
+        self.chat_reader = ChatReader(
+            channel_id,
+            nid_aut=Config.NID_AUT,
+            nid_ses=Config.NID_SES,
+        )
         self.chat_reader.start()
         time.sleep(3)  # 연결 대기
 
@@ -134,6 +138,12 @@ class ChzzkVoiceBot:
         if not self.use_mock:
             if not self.chat_sender.authenticate(channel_id):
                 return False
+            # 새로 획득한 쿠키를 ChatReader에도 전달 (성인인증 채널용)
+            if self.chat_sender._nid_aut and self.chat_reader:
+                self.chat_reader.set_credentials(
+                    self.chat_sender._nid_aut,
+                    self.chat_sender._nid_ses,
+                )
 
         print("\n초기화 완료!")
         return True

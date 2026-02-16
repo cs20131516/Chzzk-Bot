@@ -1,7 +1,7 @@
 """치지직 채팅 읽기 모듈 (chzzkpy unofficial ChatClient 사용)
 
-로그인 없이 READ 모드로 채팅을 수신합니다.
-채널 ID만 있으면 실시간 채팅 메시지를 수집할 수 있습니다.
+채널 ID로 실시간 채팅 메시지를 수집합니다.
+성인인증 채널은 NID_AUT/NID_SES 쿠키가 필요합니다.
 """
 import time
 import asyncio
@@ -18,11 +18,14 @@ class ChatReader:
     실시간 채팅 메시지를 수집합니다.
     """
 
-    def __init__(self, channel_id: str, max_messages: int = 20):
+    def __init__(self, channel_id: str, max_messages: int = 20,
+                 nid_aut: str = "", nid_ses: str = ""):
         """
         Args:
             channel_id: 치지직 채널 ID (방송 URL에서 추출)
             max_messages: 보관할 최근 메시지 수
+            nid_aut: 네이버 인증 쿠키 (성인인증 채널용)
+            nid_ses: 네이버 세션 쿠키 (성인인증 채널용)
         """
         self.channel_id = channel_id
         self.messages = deque(maxlen=max_messages)
@@ -31,6 +34,13 @@ class ChatReader:
         self._loop = None
         self._client = None
         self._running = False
+        self._nid_aut = nid_aut
+        self._nid_ses = nid_ses
+
+    def set_credentials(self, nid_aut: str, nid_ses: str):
+        """인증 정보 업데이트 (성인인증 채널용, 다음 재연결 시 적용)"""
+        self._nid_aut = nid_aut
+        self._nid_ses = nid_ses
 
     def start(self):
         """채팅 리더 시작 (별도 스레드)"""
@@ -52,7 +62,14 @@ class ChatReader:
             asyncio.set_event_loop(loop)
             client = None
             try:
-                client = ChatClient(channel_id=self.channel_id)
+                if self._nid_aut and self._nid_ses:
+                    client = ChatClient(
+                        channel_id=self.channel_id,
+                        authorization_key=self._nid_aut,
+                        session_key=self._nid_ses,
+                    )
+                else:
+                    client = ChatClient(channel_id=self.channel_id)
                 self._client = client
 
                 @client.event
