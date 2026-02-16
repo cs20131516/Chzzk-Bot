@@ -294,6 +294,14 @@ class ChzzkVoiceBot:
             return True
         return False
 
+    def _is_reaction_wave(self, threshold: int = 4, window: int = 10) -> bool:
+        """최근 채팅에서 단순 반응이 threshold개 이상이면 True (분위기 탐)"""
+        if not self.chat_reader:
+            return False
+        recent = self.chat_reader.get_recent_messages(window)
+        count = sum(1 for m in recent if self._is_simple_reaction(m["content"]))
+        return count >= threshold
+
     def _get_mimic_response(self):
         """따라하기 모드: 가장 최근 채팅 메시지를 반환"""
         if not self.chat_reader:
@@ -336,6 +344,12 @@ class ChzzkVoiceBot:
                     continue
 
                 if not self._is_simple_reaction(response):
+                    time.sleep(1)
+                    continue
+
+                # 최근 10개 중 반응이 4개 이상일 때만 따라감 (분위기 타기)
+                if not self._is_reaction_wave():
+                    last_seen = response
                     time.sleep(1)
                     continue
 
@@ -471,7 +485,7 @@ class ChzzkVoiceBot:
 
                 # 5. 하이브리드: 최근 채팅이 단순 반응이면 LLM 건너뛰고 따라치기
                 latest_chat = self._get_mimic_response()
-                if latest_chat and self._is_simple_reaction(latest_chat):
+                if latest_chat and self._is_simple_reaction(latest_chat) and self._is_reaction_wave():
                     varied = self._vary_reaction(latest_chat)
                     print(f"[하이브리드] 단순 반응 따라치기: {varied}")
                     self.response_queue.put((text, varied, ""))
