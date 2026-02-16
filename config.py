@@ -7,9 +7,7 @@ load_dotenv()
 class Config:
     """애플리케이션 설정 관리"""
 
-    # 치지직 API 설정
-    CHZZK_CLIENT_ID = os.getenv("CHZZK_CLIENT_ID")
-    CHZZK_CLIENT_SECRET = os.getenv("CHZZK_CLIENT_SECRET")
+    # 치지직 채널 설정
     CHZZK_CHANNEL_ID = os.getenv("CHZZK_CHANNEL_ID")
 
     # Ollama 설정
@@ -45,12 +43,6 @@ class Config:
         """필수 설정값 검증"""
         errors = []
 
-        if not cls.CHZZK_CLIENT_ID:
-            errors.append("CHZZK_CLIENT_ID가 설정되지 않았습니다.")
-
-        if not cls.CHZZK_CLIENT_SECRET:
-            errors.append("CHZZK_CLIENT_SECRET이 설정되지 않았습니다.")
-
         if not cls.CHZZK_CHANNEL_ID:
             errors.append("CHZZK_CHANNEL_ID가 설정되지 않았습니다.")
 
@@ -80,5 +72,5 @@ class Config:
         print(f"응답 모드: {cls.RESPONSE_MODE}")
         print(f"워밍업: {cls.WARMUP_SECONDS}초" if cls.WARMUP_SECONDS > 0 else "워밍업: 없음")
         print(f"치지직 채널 ID: {cls.CHZZK_CHANNEL_ID}")
-        print(f"API 자격증명: {'설정됨' if cls.CHZZK_CLIENT_ID else '미설정'}")
+        print(f"네이버 쿠키: {'설정됨' if cls.NID_AUT else '미설정'}")
         print("=" * 50)
