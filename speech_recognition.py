@@ -1,6 +1,10 @@
+import logging
 import torch
 import numpy as np
 from config import Config
+
+# transformers의 "Setting pad_token_id to eos_token_id" 메시지 억제
+logging.getLogger("transformers.generation.utils").setLevel(logging.ERROR)
 
 
 class SpeechRecognizer:

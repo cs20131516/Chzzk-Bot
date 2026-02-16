@@ -1,3 +1,10 @@
+import warnings
+import logging
+# aiohttp/chzzkpy 내부 리소스 정리 경고 억제 (재연결 시 불가피하게 발생)
+warnings.filterwarnings("ignore", category=ResourceWarning)
+warnings.simplefilter("ignore", ResourceWarning)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
 import os
 import re
 import time
