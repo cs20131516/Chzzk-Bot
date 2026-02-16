@@ -302,6 +302,11 @@ python main.py --mock
 
 ## 변경 이력
 
+### v1.0.2
+- **GPU 안정성**: ASR + Ollama + 게임 동시 실행 시 Windows 먹통 방지 (TDR 타임아웃 2초→10초 설정)
+- **로그 정리**: transformers `pad_token_id` 경고, aiohttp `ResourceWarning`, chzzkpy `print(user)` 디버그 출력 억제
+- **install.bat**: GPU TDR 자동 설정 단계 추가 ([7/7]), chzzkpy 디버그 출력 패치 자동화
+
 ### v1.0.1
 - **WebSocket 안정성 개선**: ChatSender/ChatReader의 이벤트 루프 경쟁 조건(race condition) 수정. 재연결 시 루프를 닫지 않고 클라이언트만 교체하여 `Event loop is closed` 에러 방지
 - **스레드 안전성**: ChatSender에 `threading.Lock` 추가로 `send_message()`와 재연결 스레드 간 동기화
