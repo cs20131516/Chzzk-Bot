@@ -54,12 +54,13 @@
 │  │  수동 승인 (기본)     │                                        │
 │  │  Enter=전송           │                                        │
 │  │  s=스킵 / e=수정      │                                        │
+│  │  m=모드 전환           │                                       │
 │  └──────────┬───────────┘                                        │
 │             │                                                    │
 │             ▼                                                    │
 │  ┌──────────────────────┐                                        │
 │  │  ChatSender           │                                       │
-│  │  (pyautogui)          │                                       │
+│  │  (chzzkpy WebSocket)  │                                       │
 │  └───────────────────────┘                                       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -80,9 +81,9 @@
                                                           │
                                                    수동 승인/자동
                                                           │
-                                                  pyautogui 입력
+                                                chzzkpy WebSocket
                                                           │
-                                                    채팅창 전송
+                                                    채팅 API 전송
 ```
 
 ## 시스템 요구사항
@@ -103,7 +104,7 @@ chzzk-bot/
 ├── speech_recognition.py    # 음성 인식 (Qwen3-ASR)
 ├── llm_handler.py           # LLM 응답 생성 (Ollama)
 ├── chat_reader.py           # 실시간 채팅 수집 (chzzkpy WebSocket)
-├── chat_sender.py           # 채팅 자동 입력 (pyautogui)
+├── chat_sender.py           # 채팅 전송 (chzzkpy WebSocket + 네이버 쿠키)
 ├── memory/                  # 메모리 시스템
 │   ├── memory_store.py      # JSON 파일 기반 메모리 저장소
 │   └── memory_manager.py    # LLM 기반 메모리 자동 업데이트
@@ -153,17 +154,35 @@ cp .env.example .env
 
 `.env` 파일 편집:
 ```env
-CHZZK_CLIENT_ID=your_client_id
-CHZZK_CLIENT_SECRET=your_client_secret
+# 치지직 채널 설정
 CHZZK_CHANNEL_ID=target_channel_id
 
+# Ollama 설정
 OLLAMA_MODEL=qwen3:8b
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_KEEP_ALIVE=10m
+
+# LLM 생성 설정
+LLM_MAX_TOKENS=200
+LLM_NUM_CTX=2048
+
+# ASR 설정
 ASR_MODEL=Qwen/Qwen3-ASR-0.6B
 
+# 오디오 설정
 AUDIO_SAMPLE_RATE=48000
 AUDIO_CHUNK_DURATION=5
+
+# 채팅 설정
 RESPONSE_COOLDOWN=10
+RESPONSE_CHANCE=1.0
 RESPONSE_MODE=ai        # ai (LLM 응답) / mimic (채팅 따라하기)
+WARMUP_SECONDS=0         # 시작 후 관찰만 하는 시간 (초)
+
+# 네이버 로그인 쿠키 (채팅 전송용)
+# 크롬 F12 → Application → Cookies → chzzk.naver.com 에서 복사
+NID_AUT=
+NID_SES=
 ```
 
 ## 사용 방법
@@ -179,6 +198,8 @@ python main.py
 - `s` = 스킵
 - `e` = 수정 후 전송
 - `m` = 모드 전환 (AI ↔ 따라하기)
+
+> **참고**: AI 모드는 하이브리드로 동작합니다. 채팅이 단순 반응(ㅋㅋㅋ, ?, ㅎㅎ 등)일 때는 LLM 없이 바로 따라치고, 그 외엔 LLM으로 응답합니다. 채팅이 활발할수록 LLM 응답 빈도가 줄어듭니다.
 
 ### 자동 전송 모드
 
@@ -203,8 +224,8 @@ python main.py --mock
 5. ASR 모델 로딩
 6. Ollama 연결 확인
 7. 오디오 출력 장치 선택 (브라우저 소리가 나오는 스피커)
-8. 채팅 입력창 마우스 위치 설정 (5초 카운트다운)
-9. 봇 동작 시작
+8. 네이버 로그인 인증 (쿠키 or 브라우저 자동 로그인)
+9. 봇 동작 시작 (ASR/LLM/Mimic 워커 스레드 병렬 실행)
 10. `Ctrl+C`로 종료 (메모리 자동 저장)
 
 ## 메모리 시스템
@@ -230,7 +251,7 @@ python main.py --mock
 | `speech_recognition.py` | 음성 → 텍스트 변환 | Qwen3-ASR |
 | `llm_handler.py` | 자연스러운 채팅 응답 생성 | Ollama (qwen3:8b) |
 | `chat_reader.py` | 실시간 채팅 메시지 수집 | chzzkpy WebSocket |
-| `chat_sender.py` | 채팅창 자동 입력 | pyautogui + pyperclip |
+| `chat_sender.py` | 채팅 WebSocket 전송 | chzzkpy + selenium |
 | `config.py` | 환경 변수 관리 | python-dotenv |
 | `memory/memory_store.py` | 메모리 저장/로드 | JSON 파일 |
 | `memory/memory_manager.py` | 메모리 자동 갱신 | Ollama LLM |
@@ -270,9 +291,10 @@ python main.py --mock
 - qwen3:4b는 instruction을 따르지 않아 영어로 응답하는 경우가 많음
 - EXAONE 3.5도 한국어 응답에 강함 (`ollama pull exaone3.5:7.8b`)
 
-### 채팅 입력이 안 됨
-- 채팅 입력창 위치 설정 시 정확한 위치에 마우스를 올려둘 것
-- 긴급 중지: 마우스를 화면 좌상단 모서리로 이동
+### 채팅 전송이 안 됨
+- `.env`에 `NID_AUT`, `NID_SES` 쿠키가 올바른지 확인 (크롬 F12 → Application → Cookies → chzzk.naver.com)
+- 쿠키 미설정 시 브라우저 자동 로그인이 뜹니다 (네이버 로그인 필요)
+- 치지직 채팅이 로그인 사용자만 가능한 채널인지 확인
 
 ## 주의사항
 
