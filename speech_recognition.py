@@ -72,6 +72,14 @@ class SpeechRecognizer:
 
             sr = sample_rate or Config.AUDIO_SAMPLE_RATE
 
+            # ASR 모델은 16000Hz를 기대 → 리샘플링
+            target_sr = 16000
+            if sr != target_sr:
+                num_samples = int(len(audio_data) * target_sr / sr)
+                indices = np.linspace(0, len(audio_data) - 1, num_samples)
+                audio_data = np.interp(indices, np.arange(len(audio_data)), audio_data).astype(np.float32)
+                sr = target_sr
+
             # Qwen3-ASR는 (np.ndarray, sr) 튜플 입력 지원
             results = self.model.transcribe(
                 audio=(audio_data, sr),
