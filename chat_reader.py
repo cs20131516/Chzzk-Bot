@@ -57,9 +57,11 @@ class ChatReader:
         retry_delay = 3
         max_delay = 30
 
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+
         while self._running:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             client = None
             try:
                 if self._nid_aut and self._nid_ses:
@@ -103,19 +105,36 @@ class ChatReader:
                 if not self._running:
                     break
                 print(f"채팅 리더 오류: {e} ({retry_delay}초 후 재연결...)")
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, max_delay)
-            finally:
-                # 리소스 정리 (Unclosed client session 방지)
+                # 클라이언트만 정리 (루프는 유지)
                 if client:
                     try:
                         loop.run_until_complete(client.close())
                     except Exception:
                         pass
-                try:
-                    loop.close()
-                except Exception:
-                    pass
+                    # aiohttp 세션 정리 시간 확보
+                    try:
+                        loop.run_until_complete(asyncio.sleep(0.1))
+                    except Exception:
+                        pass
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            else:
+                # start()가 정상 종료된 경우 (연결 끊김)
+                if client:
+                    try:
+                        loop.run_until_complete(client.close())
+                    except Exception:
+                        pass
+                    try:
+                        loop.run_until_complete(asyncio.sleep(0.1))
+                    except Exception:
+                        pass
+
+        # 스레드 종료 시 루프 정리
+        try:
+            loop.close()
+        except Exception:
+            pass
 
     def get_recent_messages(self, count: int = 10) -> list[dict]:
         """최근 채팅 메시지 반환"""
@@ -148,8 +167,14 @@ class ChatReader:
     def stop(self):
         """채팅 리더 종료"""
         self._running = False
-        # ChatClient는 내부적으로 asyncio.run을 사용하므로
-        # 스레드가 자연스럽게 종료되길 기다림
+        # 클라이언트를 닫아서 start()를 종료시킴
+        if self._client and self._loop and not self._loop.is_closed():
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._client.close(), self._loop
+                ).result(timeout=3)
+            except Exception:
+                pass
         if self._thread:
             self._thread.join(timeout=5)
         print("채팅 리더 종료")

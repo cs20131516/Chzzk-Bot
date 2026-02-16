@@ -54,6 +54,8 @@ class ChzzkVoiceBot:
         # 쿨다운 (LLM worker + main thread 공유)
         self.last_response_time = 0
         self._cooldown_lock = threading.Lock()
+        self._last_reaction_wave_time: dict[str, float] = {}  # 반응 종류별 마지막 따라하기 시각
+        self._reaction_wave_cooldown = 60  # 같은 반응 따라하기 쿨다운 (초)
 
         self.use_mock = use_mock
         self.auto_send = auto_send
@@ -307,6 +309,12 @@ class ChzzkVoiceBot:
         if not self.chat_reader:
             return False
         target_type = self._reaction_type(target)
+
+        # 같은 종류 반응 쿨다운 체크 (연속 도배 방지)
+        last_wave = self._last_reaction_wave_time.get(target_type, 0)
+        if time.time() - last_wave < self._reaction_wave_cooldown:
+            return False
+
         recent = self.chat_reader.get_recent_messages(window)
         count = sum(
             1 for m in recent
@@ -315,6 +323,11 @@ class ChzzkVoiceBot:
         )
         print(f"[반응체크] '{target_type}' 최근 {len(recent)}개 중 {count}개 (기준: {threshold}개)")
         return count >= threshold
+
+    def _mark_reaction_wave_sent(self, target: str):
+        """반응 따라하기 전송 후 쿨다운 기록"""
+        target_type = self._reaction_type(target)
+        self._last_reaction_wave_time[target_type] = time.time()
 
     def _get_mimic_response(self):
         """따라하기 모드: 가장 최근 채팅 메시지를 반환"""
@@ -367,6 +380,7 @@ class ChzzkVoiceBot:
                     time.sleep(1)
                     continue
 
+                self._mark_reaction_wave_sent(response)
                 last_seen = response
                 self.stats["processed_speeches"] += 1
                 response = self._vary_reaction(response)
@@ -500,6 +514,7 @@ class ChzzkVoiceBot:
                 # 5. 하이브리드: 최근 채팅이 단순 반응이면 LLM 건너뛰고 따라치기
                 latest_chat = self._get_mimic_response()
                 if latest_chat and self._is_simple_reaction(latest_chat) and self._is_reaction_wave(latest_chat):
+                    self._mark_reaction_wave_sent(latest_chat)
                     varied = self._vary_reaction(latest_chat)
                     print(f"[하이브리드] 단순 반응 따라치기: {varied}")
                     self.response_queue.put((text, varied, ""))

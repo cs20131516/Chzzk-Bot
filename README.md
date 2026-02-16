@@ -300,6 +300,17 @@ python main.py --mock
 - 성인인증 채널은 NID_AUT/NID_SES 쿠키 필수 (채팅 읽기/전송 모두 필요)
 - 첫 실행 시 브라우저 로그인하면 자동 저장되어 이후 자동 인증
 
+## 변경 이력
+
+### v1.0.1
+- **WebSocket 안정성 개선**: ChatSender/ChatReader의 이벤트 루프 경쟁 조건(race condition) 수정. 재연결 시 루프를 닫지 않고 클라이언트만 교체하여 `Event loop is closed` 에러 방지
+- **스레드 안전성**: ChatSender에 `threading.Lock` 추가로 `send_message()`와 재연결 스레드 간 동기화
+- **재연결 개선**: `on_connect` 이벤트로 재연결 성공 시 `retry_delay` 초기화 (30초 → 3초)
+- **반응 따라하기 쿨다운**: 같은 종류의 반응(ㅋ, ㅎ 등)에 60초 쿨다운 추가하여 도배 방지
+
+### v1.0
+- 초기 릴리스
+
 ## 주의사항
 
 - 이 봇은 교육 및 개인 사용 목적입니다

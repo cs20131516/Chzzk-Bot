@@ -28,6 +28,7 @@ class ChatSender:
         self._client: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()  # loop/client 접근 동기화
         self.is_authenticated = False
         self._running = False
         self.last_send_time = 0
@@ -189,12 +190,25 @@ class ChatSender:
         print("채팅 전송 연결 실패 (방송이 라이브 중인지 확인하세요)")
         return False
 
+    def _register_sender_events(self, client, reset_delay):
+        """ChatClient에 이벤트 핸들러 등록"""
+        @client.event
+        async def on_connect():
+            reset_delay()
+
     def _run(self):
         """별도 스레드에서 ChatClient 실행 (자동 재연결)"""
         assert self._loop is not None
         asyncio.set_event_loop(self._loop)
         retry_delay = 3
         self._running = True
+
+        def reset_delay():
+            nonlocal retry_delay
+            retry_delay = 3
+
+        self._register_sender_events(self._client, reset_delay)
+
         while self._running:
             try:
                 self._loop.run_until_complete(self._client.start())
@@ -202,35 +216,50 @@ class ChatSender:
                 if not self._running:
                     break
                 print(f"채팅 전송 연결 오류: {e} ({retry_delay}초 후 재연결...)")
-                # 기존 클라이언트/루프 정리 (Unclosed client session 방지)
+                # 클라이언트만 정리 (루프는 유지 — 닫으면 send_message에서 race condition 발생)
                 try:
                     self._loop.run_until_complete(self._client.close())
                 except Exception:
                     pass
+                # aiohttp 세션 정리 시간 확보
                 try:
-                    self._loop.close()
+                    self._loop.run_until_complete(asyncio.sleep(0.1))
                 except Exception:
                     pass
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 30)
-                # 새 이벤트 루프 + 클라이언트로 재연결
+                # 같은 루프에서 새 클라이언트로 재연결
                 try:
-                    self._loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(self._loop)
-                    self._client = ChatClient(
-                        channel_id=self._channel_id,
-                        authorization_key=self._nid_aut,
-                        session_key=self._nid_ses,
-                    )
+                    with self._lock:
+                        self._client = ChatClient(
+                            channel_id=self._channel_id,
+                            authorization_key=self._nid_aut,
+                            session_key=self._nid_ses,
+                        )
+                    self._register_sender_events(self._client, reset_delay)
                 except Exception:
                     break
+        # 스레드 종료 시 루프 정리
+        try:
+            self._loop.close()
+        except Exception:
+            pass
 
     def send_message(self, text: str, retry: int = 3) -> bool:
         """채팅 메시지 전송"""
-        if not self.is_authenticated or not self._client or not self._loop:
+        if not text or not text.strip():
+            return False
+
+        # lock으로 loop/client 안전하게 참조
+        with self._lock:
+            client = self._client
+            loop = self._loop
+
+        if not self.is_authenticated or not client or not loop:
             print("채팅 전송이 연결되지 않았습니다.")
             return False
-        if not text or not text.strip():
+        if loop.is_closed():
+            print("채팅 전송이 연결되지 않았습니다. (루프 종료됨)")
             return False
 
         # 레이트 리밋 (최소 2초 간격)
@@ -241,14 +270,15 @@ class ChatSender:
 
         try:
             future = asyncio.run_coroutine_threadsafe(
-                self._client.send_chat(text), self._loop
+                client.send_chat(text), loop
             )
             future.result(timeout=5)
             self.last_send_time = time.time()
             print(f"채팅 전송: {text}")
             return True
         except Exception as e:
-            print(f"채팅 전송 실패: {e}")
+            msg = str(e) or type(e).__name__
+            print(f"채팅 전송 실패: {msg}")
             return False
 
     def is_connected(self) -> bool:
@@ -259,13 +289,18 @@ class ChatSender:
     def disconnect(self):
         self._running = False
         self.is_authenticated = False
-        if self._client and self._loop and self._loop.is_running():
+        with self._lock:
+            client = self._client
+            loop = self._loop
+        if client and loop and not loop.is_closed():
             try:
                 asyncio.run_coroutine_threadsafe(
-                    self._client.close(), self._loop
+                    client.close(), loop
                 ).result(timeout=3)
             except Exception:
                 pass
+        if self._thread:
+            self._thread.join(timeout=5)
         print("채팅 전송 종료")
 
 
