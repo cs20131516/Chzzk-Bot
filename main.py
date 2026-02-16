@@ -261,38 +261,36 @@ class ChzzkVoiceBot:
     def _vary_reaction(text: str) -> str:
         """반복 문자 개수를 랜덤하게 변형 (봇처럼 안 보이게)
 
-        예: ㅋㅋㅋㅋㅋㅋㅋ → ㅋㅋㅋㅋㅋ (±1~3 변형)
+        예: ㅋㅋㅋㅋㅋㅋㅋ → ㅋㅋㅋㅋㅋ
         """
         text = text.strip()
         if len(text) < 2:
             return text
 
-        first_char = text[0]
-        if all(c == first_char for c in text):
-            count = len(text)
-            if count <= 3:
+        # 같은 문자 반복만 변형 (ㅋㅋㅋㅋ → ㅋㅋㅋㅋㅋ)
+        if len(set(text)) == 1:
+            n = len(text)
+            if n <= 3:
                 variation = random.randint(-1, 1)
             else:
-                variation = random.randint(-3, 3)
-            new_count = max(2, count + variation)
-            return first_char * new_count
+                # 4자 이상: 반드시 변형 (0 제외)
+                variation = random.choice([-3, -2, -1, 1, 2, 3])
+            new_count = max(2, n + variation)
+            return text[0] * new_count
 
         return text
 
     @staticmethod
     def _is_simple_reaction(text):
-        """채팅이 단순 반응인지 판별 (ㅋㅋㅋ, ?, ㅎㅎ, ㄷㄷ 등)"""
+        """채팅이 단순 반응인지 판별 - 안전하게 따라칠 수 있는 것만"""
         text = text.strip()
         if not text or len(text) > 15:
             return False
-        # 한글 자모만으로 구성 (ㅋㅋㅋ, ㅎㅎ, ㄷㄷ, ㅇㅇ, ㅠㅠ, ㅜㅜ 등)
-        if re.fullmatch(r'[ㄱ-ㅎㅏ-ㅣ]+', text):
+        # 같은 문자 반복 (ㅋㅋㅋ, ㅎㅎ, ??, ..)
+        if len(set(text)) == 1 and len(text) >= 2:
             return True
-        # 문장부호/이모티콘만 (?, !, ..., ??, ㅋㅋ?)
-        if re.fullmatch(r'[ㄱ-ㅎㅏ-ㅣ?!.~]+', text):
-            return True
-        # 짧은 감탄사 (ㄹㅇ, ㅇㅈ, ㄱㅇㄷ 등 - 초성 조합)
-        if len(text) <= 4 and re.fullmatch(r'[ㄱ-ㅎ]+', text):
+        # 짧은 자모 (2~3자): ㅇㅇ, ㄷㄷ, ㄹㅇ, ㅇㅈ
+        if len(text) <= 3 and re.fullmatch(r'[ㄱ-ㅎㅏ-ㅣ]+', text):
             return True
         return False
 
