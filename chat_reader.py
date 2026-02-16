@@ -48,10 +48,14 @@ class ChatReader:
         max_delay = 30
 
         while self._running:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            client = None
             try:
-                self._client = ChatClient(channel_id=self.channel_id)
+                client = ChatClient(channel_id=self.channel_id)
+                self._client = client
 
-                @self._client.event
+                @client.event
                 async def on_chat(message: ChatMessage):
                     nickname = message.profile.nickname if message.profile else "???"
                     self.messages.append({
@@ -60,7 +64,7 @@ class ChatReader:
                         "time": time.time(),
                     })
 
-                @self._client.event
+                @client.event
                 async def on_donation(message: DonationMessage):
                     nickname = message.profile.nickname if message.profile else "???"
                     content = message.content or ""
@@ -70,11 +74,13 @@ class ChatReader:
                             "content": content,
                         })
 
-                @self._client.event
+                @client.event
                 async def on_connect():
+                    nonlocal retry_delay
+                    retry_delay = 3  # 성공 시 딜레이 초기화
                     print("채팅 연결 성공! 메시지 수신 중...")
 
-                self._client.run()
+                loop.run_until_complete(client.start())
 
             except Exception as e:
                 if not self._running:
@@ -82,6 +88,17 @@ class ChatReader:
                 print(f"채팅 리더 오류: {e} ({retry_delay}초 후 재연결...)")
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
+            finally:
+                # 리소스 정리 (Unclosed client session 방지)
+                if client:
+                    try:
+                        loop.run_until_complete(client.close())
+                    except Exception:
+                        pass
+                try:
+                    loop.close()
+                except Exception:
+                    pass
 
     def get_recent_messages(self, count: int = 10) -> list[dict]:
         """최근 채팅 메시지 반환"""

@@ -202,10 +202,21 @@ class ChatSender:
                 if not self._running:
                     break
                 print(f"채팅 전송 연결 오류: {e} ({retry_delay}초 후 재연결...)")
+                # 기존 클라이언트/루프 정리 (Unclosed client session 방지)
+                try:
+                    self._loop.run_until_complete(self._client.close())
+                except Exception:
+                    pass
+                try:
+                    self._loop.close()
+                except Exception:
+                    pass
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 30)
-                # 재연결을 위해 새 클라이언트 생성
+                # 새 이벤트 루프 + 클라이언트로 재연결
                 try:
+                    self._loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self._loop)
                     self._client = ChatClient(
                         channel_id=self._channel_id,
                         authorization_key=self._nid_aut,

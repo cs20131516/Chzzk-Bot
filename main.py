@@ -248,6 +248,28 @@ class ChzzkVoiceBot:
         return False
 
     @staticmethod
+    def _vary_reaction(text: str) -> str:
+        """반복 문자 개수를 랜덤하게 변형 (봇처럼 안 보이게)
+
+        예: ㅋㅋㅋㅋㅋㅋㅋ → ㅋㅋㅋㅋㅋ (±1~3 변형)
+        """
+        text = text.strip()
+        if len(text) < 2:
+            return text
+
+        first_char = text[0]
+        if all(c == first_char for c in text):
+            count = len(text)
+            if count <= 3:
+                variation = random.randint(-1, 1)
+            else:
+                variation = random.randint(-3, 3)
+            new_count = max(2, count + variation)
+            return first_char * new_count
+
+        return text
+
+    @staticmethod
     def _is_simple_reaction(text):
         """채팅이 단순 반응인지 판별 (ㅋㅋㅋ, ?, ㅎㅎ, ㄷㄷ 등)"""
         text = text.strip()
@@ -311,6 +333,7 @@ class ChzzkVoiceBot:
 
                 last_seen = response
                 self.stats["processed_speeches"] += 1
+                response = self._vary_reaction(response)
                 print(f"[따라하기] 채팅 복사: {response}")
                 self.response_queue.put(("(따라하기)", response, ""))
 
@@ -441,8 +464,9 @@ class ChzzkVoiceBot:
                 # 5. 하이브리드: 최근 채팅이 단순 반응이면 LLM 건너뛰고 따라치기
                 latest_chat = self._get_mimic_response()
                 if latest_chat and self._is_simple_reaction(latest_chat):
-                    print(f"[하이브리드] 단순 반응 따라치기: {latest_chat}")
-                    self.response_queue.put((text, latest_chat, ""))
+                    varied = self._vary_reaction(latest_chat)
+                    print(f"[하이브리드] 단순 반응 따라치기: {varied}")
+                    self.response_queue.put((text, varied, ""))
                     continue
 
                 # 6. 채팅 컨텍스트 가져오기
