@@ -244,6 +244,9 @@ class LLMHandler:
         elif not korean_match:
             return None
 
+        # 한자(CJK), 일본어 등 비한글 유니코드 제거
+        text = re.sub(r'[\u2E80-\u9FFF\u3040-\u309F\u30A0-\u30FF]', '', text).strip()
+
         # 뒤쪽에 남은 영어 꼬리 제거 (한글 뒤에 붙은 영어)
         text = re.sub(r'\s+[a-zA-Z][\w\s]*$', '', text).strip()
 

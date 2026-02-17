@@ -105,13 +105,12 @@ class ChatReader:
                 if not self._running:
                     break
                 print(f"채팅 리더 오류: {e} ({retry_delay}초 후 재연결...)")
-                # 클라이언트만 정리 (루프는 유지)
-                if client:
+                # 클라이언트만 정리 (루프가 돌고 있으면 건너뜀)
+                if client and not loop.is_running():
                     try:
                         loop.run_until_complete(client.close())
                     except Exception:
                         pass
-                    # aiohttp 세션 정리 시간 확보
                     try:
                         loop.run_until_complete(asyncio.sleep(0.1))
                     except Exception:
@@ -120,7 +119,7 @@ class ChatReader:
                 retry_delay = min(retry_delay * 2, max_delay)
             else:
                 # start()가 정상 종료된 경우 (연결 끊김)
-                if client:
+                if client and not loop.is_running():
                     try:
                         loop.run_until_complete(client.close())
                     except Exception:
@@ -153,16 +152,41 @@ class ChatReader:
         recent = [m for m in self.messages if m.get("time", 0) > cutoff]
         return len(recent) / (window / 60)
 
-    def get_chat_context(self, count: int = 10) -> str:
-        """LLM 프롬프트용 채팅 컨텍스트 문자열 반환"""
-        messages = self.get_recent_messages(count)
+    def get_chat_context(self, count: int = 10, filter_reactions: bool = False) -> str:
+        """LLM 프롬프트용 채팅 컨텍스트 문자열 반환
+
+        Args:
+            count: 가져올 메시지 수
+            filter_reactions: True이면 단순 반응(ㅋㅋ, ㅎㅎ 등) 제외
+        """
+        messages = self.get_recent_messages(count * 2 if filter_reactions else count)
         if not messages:
             return "(채팅 없음)"
 
         lines = []
         for msg in messages:
-            lines.append(f"{msg['nickname']}: {msg['content']}")
-        return "\n".join(lines)
+            content = msg['content'].strip()
+            if filter_reactions and self._is_noise(content):
+                continue
+            lines.append(f"{msg['nickname']}: {content}")
+        if not lines:
+            return "(채팅 없음)"
+        return "\n".join(lines[-count:])
+
+    @staticmethod
+    def _is_noise(text: str) -> bool:
+        """단순 반응/노이즈 채팅인지 판별"""
+        text = text.strip()
+        if not text or len(text) > 15:
+            return False
+        # 같은 문자 반복 (ㅋㅋㅋ, ㅎㅎ, ??)
+        if len(set(text)) == 1 and len(text) >= 2:
+            return True
+        # 짧은 자모 (ㅇㅇ, ㄷㄷ, ㄹㅇ)
+        import re
+        if len(text) <= 3 and re.fullmatch(r'[ㄱ-ㅎㅏ-ㅣ]+', text):
+            return True
+        return False
 
     def stop(self):
         """채팅 리더 종료"""

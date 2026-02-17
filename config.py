@@ -31,7 +31,7 @@ class Config:
     RESPONSE_COOLDOWN = int(os.getenv("RESPONSE_COOLDOWN", "10"))
     RESPONSE_CHANCE = float(os.getenv("RESPONSE_CHANCE", "1.0"))
     SMART_RESPONSE = os.getenv("SMART_RESPONSE", "false").lower() == "true"
-    RESPONSE_MODE = os.getenv("RESPONSE_MODE", "ai")  # "ai" 또는 "mimic"
+    RESPONSE_MODE = os.getenv("RESPONSE_MODE", "hybrid")  # "ai", "mimic", "hybrid"
     WARMUP_SECONDS = int(os.getenv("WARMUP_SECONDS", "0"))  # 시작 후 관찰만 하는 시간 (초)
 
     # 네이버 로그인 쿠키 (채팅 전송용)

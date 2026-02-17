@@ -163,7 +163,8 @@ class ChzzkVoiceBot:
             print("\n초기화 실패.")
             return
 
-        mode_label = "따라하기" if self.response_mode == "mimic" else "AI"
+        mode_labels = {"ai": "AI", "mimic": "따라하기", "hybrid": "하이브리드"}
+        mode_label = mode_labels.get(self.response_mode, self.response_mode)
         print("\n" + "=" * 60)
         print("  봇 시작! (동시성 파이프라인)")
         print(f"  현재 모드: {mode_label} (m키로 전환)")
@@ -336,6 +337,15 @@ class ChzzkVoiceBot:
         target_type = self._reaction_type(target)
         self._last_reaction_wave_time[target_type] = time.time()
 
+    def _cycle_mode(self):
+        """모드 순환: ai → hybrid → mimic → ai"""
+        mode_order = ["ai", "hybrid", "mimic"]
+        mode_labels = {"ai": "AI", "hybrid": "하이브리드", "mimic": "따라하기"}
+        idx = mode_order.index(self.response_mode) if self.response_mode in mode_order else 0
+        old = self.response_mode
+        self.response_mode = mode_order[(idx + 1) % len(mode_order)]
+        print(f"\n  [모드] {mode_labels.get(old, old)} → {mode_labels.get(self.response_mode, self.response_mode)}")
+
     def _get_mimic_response(self):
         """따라하기 모드: 가장 최근 채팅 메시지를 반환"""
         if not self.chat_reader:
@@ -350,7 +360,7 @@ class ChzzkVoiceBot:
         last_seen = None  # 마지막으로 본 채팅 (중복 방지)
         while not self._stop_event.is_set():
             try:
-                if self.response_mode != "mimic":
+                if self.response_mode not in ("mimic", "hybrid"):
                     time.sleep(0.5)
                     continue
 
@@ -485,8 +495,8 @@ class ChzzkVoiceBot:
                     print(f"[LLM] 짧은 발화 스킵 ({len(text.strip())}자): {text}")
                     continue
 
-                # 3. AI 모드가 아니면 스킵 (따라하기는 _mimic_worker가 처리)
-                if self.response_mode != "ai":
+                # 3. 따라하기 전용 모드면 스킵 (mimic_worker가 처리)
+                if self.response_mode == "mimic":
                     continue
 
                 # 4. 동적 쿨다운 (채팅 활발하면 LLM 덜 응답, 조용하면 더 응답)
@@ -518,19 +528,10 @@ class ChzzkVoiceBot:
 
                 self.stats["processed_speeches"] += 1
 
-                # 5. 하이브리드: 최근 채팅이 단순 반응이면 LLM 건너뛰고 따라치기
-                latest_chat = self._get_mimic_response()
-                if latest_chat and self._is_simple_reaction(latest_chat) and self._is_reaction_wave(latest_chat):
-                    self._mark_reaction_wave_sent(latest_chat)
-                    varied = self._vary_reaction(latest_chat)
-                    print(f"[하이브리드] 단순 반응 따라치기: {varied}")
-                    self.response_queue.put((text, varied, ""))
-                    continue
-
-                # 6. 채팅 컨텍스트 가져오기
+                # 6. 채팅 컨텍스트 가져오기 (단순 반응 제외 → LLM이 ㅋㅋ만 생성하는 것 방지)
                 chat_context = ""
                 if self.chat_reader:
-                    chat_context = self.chat_reader.get_chat_context(10)
+                    chat_context = self.chat_reader.get_chat_context(10, filter_reactions=True)
                     if chat_context != "(채팅 없음)":
                         print(f"[LLM] 채팅 컨텍스트: {len(self.chat_reader.messages)}개")
 
@@ -551,6 +552,17 @@ class ChzzkVoiceBot:
                 if not response:
                     print("[LLM] 응답 생성 실패")
                     continue
+
+                # LLM이 단순 반응만 생성하면 스킵 (mimic이 처리)
+                if self._is_simple_reaction(response):
+                    print(f"[LLM] 단순 반응 스킵: {response}")
+                    continue
+
+                # hybrid 모드: LLM 응답은 로그만 (mimic_worker가 전송 담당)
+                if self.response_mode == "hybrid":
+                    print(f"[LLM 참고] {response}")
+                    continue
+
                 print(f"[LLM] 응답: {response}")
 
                 # 7. response_queue에 전달
@@ -576,12 +588,11 @@ class ChzzkVoiceBot:
                 if self.auto_send:
                     success = self.chat_sender.send_message(response)
                 else:
-                    mode_label = "따라하기" if self.response_mode == "mimic" else "AI"
+                    mode_labels = {"ai": "AI", "mimic": "따라하기", "hybrid": "하이브리드"}
+                    mode_label = mode_labels.get(self.response_mode, self.response_mode)
                     choice = input(f"  [{mode_label}] [{response}] Enter=전송 / s=스킵 / e=수정 / m=모드전환: ").strip().lower()
                     if choice == 'm':
-                        old_mode = self.response_mode
-                        self.response_mode = "mimic" if self.response_mode == "ai" else "ai"
-                        print(f"  [모드] {old_mode} → {self.response_mode}")
+                        self._cycle_mode()
                         continue
                     elif choice == 's':
                         print("  스킵됨")
@@ -615,9 +626,7 @@ class ChzzkVoiceBot:
                 if msvcrt.kbhit():
                     key = msvcrt.getch().decode("utf-8", errors="ignore").lower()
                     if key == "m":
-                        old_mode = self.response_mode
-                        self.response_mode = "mimic" if self.response_mode == "ai" else "ai"
-                        print(f"\n  [모드] {old_mode} → {self.response_mode}")
+                        self._cycle_mode()
                 time.sleep(0.1)
             except Exception:
                 time.sleep(0.1)

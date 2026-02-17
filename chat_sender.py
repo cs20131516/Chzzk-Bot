@@ -149,6 +149,15 @@ class ChatSender:
         for _ in range(200):
             time.sleep(0.1)
             if self._client.is_connected:
+                # user_id 없으면 쿠키 만료 (READ 모드로 연결된 것)
+                if not self._client.user_id:
+                    print("쿠키가 만료되었습니다. 재로그인이 필요합니다.")
+                    self._running = False
+                    try:
+                        self._loop.run_until_complete(self._client.close())
+                    except Exception:
+                        pass
+                    return False
                 self.is_authenticated = True
                 print("채팅 전송 연결 성공!")
                 return True
@@ -216,16 +225,16 @@ class ChatSender:
                 if not self._running:
                     break
                 print(f"채팅 전송 연결 오류: {e} ({retry_delay}초 후 재연결...)")
-                # 클라이언트만 정리 (루프는 유지 — 닫으면 send_message에서 race condition 발생)
-                try:
-                    self._loop.run_until_complete(self._client.close())
-                except Exception:
-                    pass
-                # aiohttp 세션 정리 시간 확보
-                try:
-                    self._loop.run_until_complete(asyncio.sleep(0.1))
-                except Exception:
-                    pass
+                # 클라이언트만 정리 (루프가 돌고 있으면 건너뜀)
+                if not self._loop.is_running():
+                    try:
+                        self._loop.run_until_complete(self._client.close())
+                    except Exception:
+                        pass
+                    try:
+                        self._loop.run_until_complete(asyncio.sleep(0.1))
+                    except Exception:
+                        pass
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 30)
                 # 같은 루프에서 새 클라이언트로 재연결
