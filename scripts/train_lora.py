@@ -39,8 +39,8 @@ def load_training_data(path):
 def main():
     parser = argparse.ArgumentParser(description="LoRA 파인튜닝")
     parser.add_argument("--data", default="data/training_data.jsonl", help="학습 데이터 경로")
-    parser.add_argument("--base-model", default="Qwen/Qwen3-4B",
-                        help="베이스 모델 (기본: Qwen3-4B)")
+    parser.add_argument("--base-model", default="Qwen/Qwen3-8B",
+                        help="베이스 모델 (기본: Qwen3-8B)")
     parser.add_argument("--output-dir", default="outputs/qwen3-chat-lora", help="출력 디렉토리")
     parser.add_argument("--epochs", type=int, default=3, help="학습 에포크 (기본 3)")
     parser.add_argument("--lr", type=float, default=5e-5, help="학습률 (기본 5e-5)")

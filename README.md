@@ -114,8 +114,9 @@ chzzk-bot/
 │       ├── chat_memory.json
 │       └── my_chat_memory.json
 ├── scripts/
-│   ├── collect_vod_chats.py # VOD 채팅 수집 (학습 데이터용)
-│   └── train_lora.py        # LoRA 파인튜닝 스크립트
+│   ├── collect_vod_chats.py      # VOD 채팅 수집 (학습 데이터용)
+│   ├── prepare_training_data.py  # 수집 데이터 → 학습 포맷 변환
+│   └── train_lora.py             # QLoRA 파인튜닝 (PEFT + TRL)
 ├── requirements.txt         # 의존성 패키지
 ├── .env                     # 환경 변수 (gitignore)
 ├── .env.example             # 환경 변수 템플릿
@@ -359,17 +360,27 @@ JSONL 파일 (`data/vod_chats/my_chats/`)에 직전 맥락 + 본인 응답 쌍�
 
 ## LoRA 학습
 
-수집한 본인 채팅 데이터로 Ollama 모델을 LoRA 파인튜닝하여 개인 채팅 스타일을 학습시킬 수 있습니다.
+수집한 본인 채팅 데이터로 QLoRA 파인튜닝하여 개인 채팅 스타일을 학습시킬 수 있습니다.
 
 ```bash
-# 학습 데이터 준비 + LoRA 학습
-python scripts/train_lora.py --data data/vod_chats/my_chats/ --base-model qwen3:8b
+# 1단계: 수집 데이터 → 학습 포맷 변환
+python scripts/prepare_training_data.py
+
+# 2단계: QLoRA 학습 (PEFT + TRL, GPU 필요)
+python scripts/train_lora.py
+```
+
+추가 패키지 설치 (학습용):
+```bash
+pip install peft trl datasets accelerate bitsandbytes sentencepiece
 ```
 
 학습 방식:
+- **QLoRA (4-bit)**: HuggingFace `Qwen/Qwen3-8B` 베이스 모델을 4-bit 양자화로 학습
 - **LoRA는 스타일만 학습**: 말투, 이모티콘 사용, 반응 패턴 등
 - **맥락은 런타임 프롬프트로 제공**: 스트리머 발언, 채팅 분위기 등
 - 기본 모델의 한국어 능력은 유지하면서 개인 스타일만 추가
+- 학습 완료 후 GGUF 변환하여 Ollama에 등록 가능
 
 ## 변경 이력
 
