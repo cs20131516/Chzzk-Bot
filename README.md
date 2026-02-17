@@ -358,29 +358,35 @@ JSONL 파일 (`data/vod_chats/my_chats/`)에 직전 맥락 + 본인 응답 쌍�
 - 타인의 채팅이나 스트리머 음성은 학습에 사용하지 않음
 - 수집 데이터는 `data/` 디렉토리에 저장되며 git에 포함되지 않음 (.gitignore)
 
-## LoRA 학습
+## LoRA 학습 (개인 채팅 스타일)
 
 수집한 본인 채팅 데이터로 QLoRA 파인튜닝하여 개인 채팅 스타일을 학습시킬 수 있습니다.
 
+### 학습 전체 순서
+
 ```bash
-# 1단계: 수집 데이터 → 학습 포맷 변환
+# 0단계: 추가 패키지 설치 (최초 1회)
+pip install peft trl datasets accelerate bitsandbytes sentencepiece
+
+# 1단계: VOD에서 본인 채팅 수집
+python scripts/collect_vod_chats.py --scan --login
+
+# 2단계: 수집 데이터 → 학습 포맷 변환
 python scripts/prepare_training_data.py
 
-# 2단계: QLoRA 학습 (PEFT + TRL, GPU 필요)
+# 3단계: QLoRA 학습 (GPU 필요)
 python scripts/train_lora.py
+
+# 4단계: GGUF 변환 → Ollama에 등록
+#   llama.cpp의 convert_lora_to_gguf.py로 변환 후 Modelfile에 ADAPTER 지정
 ```
 
-추가 패키지 설치 (학습용):
-```bash
-pip install peft trl datasets accelerate bitsandbytes sentencepiece
-```
+### 학습 방식
 
-학습 방식:
-- **QLoRA (4-bit)**: HuggingFace `Qwen/Qwen3-8B` 베이스 모델을 4-bit 양자화로 학습
+- **QLoRA (4-bit)**: HuggingFace `Qwen/Qwen3-8B` 베이스 모델을 4-bit 양자화로 학습 (PEFT + TRL)
 - **LoRA는 스타일만 학습**: 말투, 이모티콘 사용, 반응 패턴 등
 - **맥락은 런타임 프롬프트로 제공**: 스트리머 발언, 채팅 분위기 등
 - 기본 모델의 한국어 능력은 유지하면서 개인 스타일만 추가
-- 학습 완료 후 GGUF 변환하여 Ollama에 등록 가능
 
 ## 변경 이력
 
