@@ -88,7 +88,7 @@
 
 ## 시스템 요구사항
 
-- Python 3.9 이상
+- Python 3.11 이상 (chzzkpy 2.x 요구)
 - 최소 8GB RAM (ASR 모델 실행용)
 - GPU 권장 (CUDA, RTX 3090 등)
 - Windows (WASAPI 루프백)
@@ -113,6 +113,9 @@ chzzk-bot/
 │       ├── streamer_memory.json
 │       ├── chat_memory.json
 │       └── my_chat_memory.json
+├── scripts/
+│   ├── collect_vod_chats.py # VOD 채팅 수집 (학습 데이터용)
+│   └── train_lora.py        # LoRA 파인튜닝 스크립트
 ├── requirements.txt         # 의존성 패키지
 ├── .env                     # 환경 변수 (gitignore)
 ├── .env.example             # 환경 변수 템플릿
@@ -125,14 +128,17 @@ chzzk-bot/
 
 ```bash
 # conda 환경 생성 (권장)
-conda create -n chzzk-bot python=3.10
+conda create -n chzzk-bot python=3.11
 conda activate chzzk-bot
 
 # 또는 venv
 python -m venv venv
 venv\Scripts\activate
 
-# 의존성 설치
+# PyTorch CUDA 먼저 설치 (GPU 사용 시)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# 나머지 의존성 설치
 pip install -r requirements.txt
 ```
 
@@ -299,6 +305,71 @@ python main.py --mock
 ### "Adult verification" 오류
 - 성인인증 채널은 NID_AUT/NID_SES 쿠키 필수 (채팅 읽기/전송 모두 필요)
 - 첫 실행 시 브라우저 로그인하면 자동 저장되어 이후 자동 인증
+
+## VOD 채팅 수집 (학습 데이터)
+
+`scripts/collect_vod_chats.py`로 치지직 VOD 다시보기에서 본인의 채팅 메시지를 수집하여 LoRA 학습 데이터를 만들 수 있습니다.
+
+### 수집 모드
+
+```bash
+# 팔로우 채널 스캔 — 내가 활동한 채널을 자동 탐지하고 데이터 수집
+python scripts/collect_vod_chats.py --scan --login
+
+# 특정 VOD 테스트
+python scripts/collect_vod_chats.py --vod 12345
+
+# 채널의 VOD에서 수집 (최근 10개)
+python scripts/collect_vod_chats.py --channel CHANNEL_ID --max-vods 20
+
+# 스캔으로 찾은 채널 목록 파일 사용
+python scripts/collect_vod_chats.py --channels-file data/vod_chats/active_channels.txt --max-vods 20
+```
+
+### 옵션
+
+| 옵션 | 설명 |
+|------|------|
+| `--scan` | 팔로우 채널에서 내 활동 스캔 + 수집 |
+| `--login` | 브라우저로 네이버 로그인 (쿠키 갱신) |
+| `--my-uid` | 내 userIdHash (쿠키 있으면 자동 감지) |
+| `--save-raw` | 전체 채팅도 CSV로 저장 |
+| `--max-vods N` | 채널당 최대 VOD 수 (기본 10) |
+
+### 출력 형식
+
+JSONL 파일 (`data/vod_chats/my_chats/`)에 직전 맥락 + 본인 응답 쌍으로 저장:
+
+```json
+{
+  "context": [
+    {"nickname": "유저A", "message": "ㅋㅋㅋㅋ", "time": "01:23:40"},
+    {"nickname": "유저B", "message": "이거 실화냐", "time": "01:23:43"}
+  ],
+  "response": {"nickname": "나", "message": "ㄹㅇㅋㅋ", "time": "01:23:45"}
+}
+```
+
+### 저작권 및 개인정보
+
+- **본 도구는 본인의 채팅 데이터만 수집합니다** (UID 필터링)
+- 개인 사용 + 비상업적 목적으로 저작권 문제 없음
+- 타인의 채팅이나 스트리머 음성은 학습에 사용하지 않음
+- 수집 데이터는 `data/` 디렉토리에 저장되며 git에 포함되지 않음 (.gitignore)
+
+## LoRA 학습
+
+수집한 본인 채팅 데이터로 Ollama 모델을 LoRA 파인튜닝하여 개인 채팅 스타일을 학습시킬 수 있습니다.
+
+```bash
+# 학습 데이터 준비 + LoRA 학습
+python scripts/train_lora.py --data data/vod_chats/my_chats/ --base-model qwen3:8b
+```
+
+학습 방식:
+- **LoRA는 스타일만 학습**: 말투, 이모티콘 사용, 반응 패턴 등
+- **맥락은 런타임 프롬프트로 제공**: 스트리머 발언, 채팅 분위기 등
+- 기본 모델의 한국어 능력은 유지하면서 개인 스타일만 추가
 
 ## 변경 이력
 

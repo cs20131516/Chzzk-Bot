@@ -1,9 +1,15 @@
-qwen-asr>=0.0.5
-torch>=2.0.0
+# PyTorch (CUDA) — 반드시 먼저 설치:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+torch>=2.6.0
+torchvision>=0.21.0
+torchaudio>=2.6.0
+
+# Python >= 3.11 필요 (chzzkpy 2.x가 typing.Self 사용)
+qwen-asr>=0.0.6
 soundcard>=0.4.0
 numpy>=1.24.0
 requests>=2.31.0
 python-dotenv>=1.0.0
-chzzkpy>=2.0.0
+chzzkpy>=2.1.0
 undetected-chromedriver>=3.5.0
 selenium>=4.0.0
