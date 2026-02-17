@@ -8,7 +8,10 @@
   # 채널의 모든 VOD에서 내 채팅 수집
   python scripts/collect_vod_chats.py --channel CHANNEL_ID --my-uid USER_ID_HASH
 
-  # 팔로우 채널 목록에서 수집 (쿠키 필요)
+  # 팔로우 채널에서 내가 활동한 채널 스캔 (쿠키 필요)
+  python scripts/collect_vod_chats.py --scan
+
+  # 팔로우 채널에서 수집 (쿠키 필요)
   python scripts/collect_vod_chats.py --follow --my-uid USER_ID_HASH
 
   # 수동 채널 목록 파일
@@ -291,6 +294,97 @@ def save_raw_chats_csv(chats, output_path):
     print(f"CSV 저장 완료: {output_path} ({len(chats)}개)")
 
 
+# ──────────────────── 로그인 ────────────────────
+
+def browser_login():
+    """브라우저로 네이버 로그인 → 쿠키 반환 (chat_sender.py 로직 재사용)"""
+    try:
+        import undetected_chromedriver as uc
+    except ImportError:
+        print("undetected-chromedriver가 필요합니다: pip install undetected-chromedriver")
+        return "", ""
+
+    print("\n네이버 로그인 창을 여는 중...")
+    print("로그인 완료 후 자동으로 쿠키를 가져옵니다.\n")
+
+    chrome_path = uc.find_chrome_executable()
+    ver = None
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["powershell", "-Command",
+             f"(Get-Item '{chrome_path}').VersionInfo.FileVersion"],
+            text=True,
+        )
+        ver = int(out.strip().split(".")[0])
+        print(f"Chrome {ver} 감지됨")
+    except Exception:
+        pass
+
+    import tempfile
+    tmp_profile = os.path.join(tempfile.gettempdir(), "chzzk_bot_chrome")
+    os.makedirs(tmp_profile, exist_ok=True)
+    driver = uc.Chrome(
+        headless=False,
+        version_main=ver,
+        user_data_dir=tmp_profile,
+    )
+    nid_aut = ""
+    nid_ses = ""
+
+    try:
+        driver.get("https://nid.naver.com/nidlogin.login?url=https://chzzk.naver.com/")
+        time.sleep(2)
+
+        from selenium.webdriver.support.ui import WebDriverWait
+        if "nidlogin" in driver.current_url:
+            print("네이버 로그인을 완료해주세요 (최대 3분 대기)...")
+            WebDriverWait(driver, 180).until(
+                lambda d: "nidlogin" not in d.current_url
+            )
+
+        driver.get("https://chzzk.naver.com/")
+        time.sleep(2)
+
+        for c in driver.get_cookies():
+            if c["name"] == "NID_AUT":
+                nid_aut = c["value"]
+            elif c["name"] == "NID_SES":
+                nid_ses = c["value"]
+
+        if nid_aut and nid_ses:
+            print("로그인 성공! 쿠키를 가져왔습니다.")
+    except Exception as e:
+        print(f"로그인 실패: {e}")
+    finally:
+        driver.quit()
+
+    return nid_aut, nid_ses
+
+
+def save_cookies_to_env(nid_aut, nid_ses, env_path):
+    """쿠키를 .env 파일에 저장"""
+    env_path = Path(env_path)
+    if not env_path.exists():
+        return
+
+    with open(env_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.startswith("NID_AUT="):
+            new_lines.append(f"NID_AUT={nid_aut}\n")
+        elif line.startswith("NID_SES="):
+            new_lines.append(f"NID_SES={nid_ses}\n")
+        else:
+            new_lines.append(line)
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+    print(".env에 쿠키 저장 완료")
+
+
 # ──────────────────── 메인 ────────────────────
 
 def main():
@@ -300,8 +394,12 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--vod", type=int, help="단일 VOD 번호 테스트")
     source.add_argument("--channel", type=str, help="채널 ID")
+    source.add_argument("--scan", action="store_true", help="팔로우 채널 스캔 (내가 활동한 채널 찾기)")
     source.add_argument("--follow", action="store_true", help="팔로우 채널에서 수집")
     source.add_argument("--channels-file", type=str, help="채널 ID 목록 파일 (한 줄에 하나)")
+
+    # 인증
+    parser.add_argument("--login", action="store_true", help="브라우저로 네이버 로그인하여 쿠키 갱신")
 
     # 필터링
     parser.add_argument("--my-uid", type=str, help="내 userIdHash (필터링용)")
@@ -321,6 +419,18 @@ def main():
     nid_aut = os.getenv("NID_AUT", "")
     nid_ses = os.getenv("NID_SES", "")
 
+    # ── 브라우저 로그인 ──
+    if args.login or (not nid_aut and (args.scan or args.follow)):
+        nid_aut, nid_ses = browser_login()
+        if nid_aut and nid_ses:
+            save_cookies_to_env(
+                nid_aut, nid_ses,
+                Path(__file__).resolve().parent.parent / ".env",
+            )
+        else:
+            print("로그인에 실패했습니다.")
+            return
+
     client = ChzzkClient(nid_aut, nid_ses)
 
     # ── 쿠키로 내 UID 자동 조회 ──
@@ -336,6 +446,80 @@ def main():
             print("  쿠키가 만료되었거나 로그인 정보를 가져올 수 없습니다.")
             print("  --my-uid 옵션으로 직접 지정하거나, 봇을 실행하여 재로그인하세요.")
             print()
+
+    # ── 팔로우 채널 스캔 모드 ──
+    if args.scan:
+        if not nid_aut:
+            print("스캔에는 NID_AUT/NID_SES 쿠키가 필요합니다.")
+            print(".env 파일에 설정하거나 봇을 한번 실행하여 로그인하세요.")
+            return
+        if not args.my_uid:
+            print("스캔에는 내 UID가 필요합니다. 쿠키가 만료된 경우 --my-uid를 직접 지정하세요.")
+            return
+
+        print("팔로우 채널 목록 조회중...")
+        channels = client.get_following_channels()
+        if not channels:
+            print("팔로우 채널이 없거나 쿠키가 만료되었습니다.")
+            return
+
+        print(f"팔로우 채널: {len(channels)}개")
+        print(f"내 UID: {args.my_uid}")
+        print(f"\n각 채널의 최신 VOD에서 내 활동을 스캔합니다...\n")
+
+        active_channels = []
+        total_my_chats = 0
+        for ch in channels:
+            ch_id = ch["channel_id"]
+            ch_name = ch["channel_name"]
+            safe_name = ch_name.replace("/", "_").replace("\\", "_")[:20]
+
+            videos = client.get_channel_videos(ch_id, max_pages=1)
+            if not videos:
+                print(f"  {ch_name:20s} - VOD 없음")
+                continue
+
+            vid = videos[0]
+            vno = vid["video_no"]
+            chats = client.get_vod_chats(vno, progress=False)
+            my_chats = filter_my_chats(chats, args.my_uid)
+
+            if my_chats:
+                save_results(my_chats, f"{args.output_dir}/my_chats/{safe_name}/vod_{vno}.jsonl")
+                total_my_chats += len(my_chats)
+                active_channels.append({
+                    "channel_id": ch_id,
+                    "channel_name": ch_name,
+                    "vod_no": vno,
+                    "my_chat_count": len(my_chats),
+                    "total_chats": len(chats),
+                })
+                print(f"  {ch_name:20s} - 내 채팅 {len(my_chats)}개 저장 / 전체 {len(chats)}개")
+            else:
+                print(f"  {ch_name:20s} - 내 채팅 0개 / 전체 {len(chats)}개")
+
+            time.sleep(VOD_DELAY)
+
+        # 결과 요약
+        print(f"\n{'='*60}")
+        print(f"스캔 완료! 활동 채널: {len(active_channels)}개 / 전체 {len(channels)}개")
+        print(f"수집된 내 채팅: {total_my_chats}개")
+        print(f"저장 위치: {args.output_dir}/my_chats/")
+        print(f"{'='*60}")
+
+        if active_channels:
+            # channels.txt 자동 생성
+            channels_file = Path(args.output_dir) / "active_channels.txt"
+            channels_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(channels_file, "w", encoding="utf-8") as f:
+                f.write("# 자동 스캔으로 발견된 활동 채널\n")
+                for ch in active_channels:
+                    f.write(f"{ch['channel_id']}  # {ch['channel_name']}\n")
+            print(f"\n채널 목록 저장: {channels_file}")
+            print(f"더 많은 VOD에서 수집하려면:")
+            print(f"  python scripts/collect_vod_chats.py --channels-file {channels_file} --max-vods 20")
+
+        return
 
     # ── 단일 VOD 테스트 ──
     if args.vod:
