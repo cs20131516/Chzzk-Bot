@@ -1,9 +1,21 @@
+# 환경/설정
 .env
+.vscode/
+.claude/
+
+# Python
 __pycache__/
 *.pyc
 venv/
-.vscode/
-test_audio.py
-.claude/
-*.jsonl
+venv-train/
+
+# 데이터/모델 (대용량)
 data/
+outputs/
+*.jsonl
+
+# 캐시
+unsloth_compiled_cache/
+
+# 기타
+test_audio.py
